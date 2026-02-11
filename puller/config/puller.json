@@ -1,0 +1,14 @@
+{
+    "server": {
+        "url": "rtmp://localhost:1935/live",
+        "stream_key": ""
+    },
+    "storage": {
+        "output_dir": "./recordings",
+        "format": "mp4",
+        "segment_duration": 3600
+    },
+    "decode": {
+        "hardware": true
+    }
+}
