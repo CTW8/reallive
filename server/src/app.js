@@ -1,9 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const authRoutes = require('./routes/auth');
 const cameraRoutes = require('./routes/cameras');
+const dashboardRoutes = require('./routes/dashboard');
+const sessionRoutes = require('./routes/sessions');
 
 const app = express();
 
@@ -11,16 +14,36 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Proxy FLV streams to SRS
+// Use pathFilter instead of app.use('/live', ...) to preserve the full URL path.
+// Express mount strips the prefix, causing SRS to receive /xxx.flv instead of /live/xxx.flv.
+app.use(createProxyMiddleware({
+  target: 'http://localhost:8080',
+  pathFilter: '/live',
+  changeOrigin: true,
+  // Disable proxy timeout for long-lived HTTP-FLV streaming connections
+  timeout: 0,
+  proxyTimeout: 0,
+}));
+
 // Serve Vue frontend static files
 app.use(express.static(path.join(__dirname, '..', 'web', 'dist')));
 
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/cameras', cameraRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/sessions', sessionRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    memoryUsage: process.memoryUsage().rss,
+    nodeVersion: process.version,
+  });
 });
 
 // SPA fallback - serve index.html for non-API routes

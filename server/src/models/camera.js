@@ -47,6 +47,23 @@ const Camera = {
     const result = db.prepare('DELETE FROM cameras WHERE id = ? AND user_id = ?').run(id, userId);
     return result.changes > 0;
   },
+
+  countByUserIdGroupedByStatus(userId) {
+    const rows = db.prepare(
+      'SELECT status, COUNT(*) as count FROM cameras WHERE user_id = ? GROUP BY status'
+    ).all(userId);
+    const total = db.prepare(
+      'SELECT COUNT(*) as count FROM cameras WHERE user_id = ?'
+    ).get(userId);
+
+    const result = { total: total.count, online: 0, streaming: 0, offline: 0 };
+    for (const row of rows) {
+      if (row.status === 'streaming') result.streaming = row.count;
+      else if (row.status === 'online') result.online = row.count;
+      else result.offline += row.count;
+    }
+    return result;
+  },
 };
 
 module.exports = Camera;

@@ -62,17 +62,20 @@ bool jsonBool(const std::string& json, const std::string& key, bool defaultVal) 
 } // anonymous namespace
 
 Config::Config() {
-    // Set defaults
+    // Set defaults - 720p @ 15fps for software encoding on Pi 5
     config_.stream.url = "rtmp://localhost:1935/live";
     config_.stream.streamKey = "";
-    config_.camera.width = 1920;
-    config_.camera.height = 1080;
-    config_.camera.fps = 30;
+    config_.camera.width = 1280;
+    config_.camera.height = 720;
+    config_.camera.fps = 15;
     config_.camera.pixelFormat = "NV12";
+    config_.encoder.width = 1280;
+    config_.encoder.height = 720;
+    config_.encoder.fps = 15;
     config_.encoder.codec = "h264";
-    config_.encoder.bitrate = 4000000;
+    config_.encoder.bitrate = 2000000;  // 2Mbps for 720p
     config_.encoder.profile = "main";
-    config_.encoder.gopSize = 60;
+    config_.encoder.gopSize = 30;
     config_.encoder.inputFormat = "NV12";
     config_.audio.sampleRate = 44100;
     config_.audio.channels = 1;
@@ -129,6 +132,9 @@ bool Config::parseJson(const std::string& jsonStr) {
 
     std::string profile = jsonValue(jsonStr, "profile");
     if (!profile.empty()) config_.encoder.profile = profile;
+
+    int gop = jsonInt(jsonStr, "gop", 0);
+    if (gop > 0) config_.encoder.gopSize = gop;
 
     // Audio section
     config_.enableAudio = jsonBool(jsonStr, "enable_audio", false);

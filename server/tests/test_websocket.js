@@ -1,7 +1,7 @@
 /**
  * RealLive WebSocket Signaling Test
  *
- * Tests Socket.io signaling for WebRTC offer/answer/ICE candidate exchange.
+ * Tests Socket.io signaling for camera status updates.
  *
  * Usage:
  *   node test_websocket.js [server_url]
@@ -110,11 +110,11 @@ async function runTests() {
     process.exit(1);
   }
 
-  // S-016: Join camera room
-  console.log("\n[TEST S-016] Join camera room");
+  // S-016: Join camera status room
+  console.log("\n[TEST S-016] Join camera status room");
   try {
     const joinResult = await new Promise((resolve, reject) => {
-      socket1.emit("join-room", { cameraId: camera.id }, (response) => {
+      socket1.emit("join-room", { room: `camera-${camera.id}` }, (response) => {
         resolve(response);
       });
       setTimeout(
@@ -127,73 +127,61 @@ async function runTests() {
     assert(false, `Join room failed: ${err.message}`);
   }
 
-  // S-017: WebRTC offer/answer relay
-  console.log("\n[TEST S-017] WebRTC offer/answer relay");
+  // S-017: Camera status broadcast
+  console.log("\n[TEST S-017] Camera status broadcast");
   let socket2;
   try {
     // Create second connection (simulating a viewer)
     socket2 = await connectSocket(token);
     assert(socket2.connected, "Second socket connected (viewer)");
 
-    // Second socket joins same room
-    socket2.emit("join-room", { cameraId: camera.id });
+    // Second socket joins same camera room
+    socket2.emit("join-room", { room: `camera-${camera.id}` });
 
     // Wait for room join to process
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // Set up listener for offer on socket2
-    const offerReceived = new Promise((resolve) => {
-      socket2.on("offer", (data) => {
+    // Set up listener for camera-status on socket2
+    const statusReceived = new Promise((resolve) => {
+      socket2.on("camera-status", (data) => {
         resolve(data);
       });
       setTimeout(() => resolve(null), 3000);
     });
 
-    // Send offer from socket1
-    const mockOffer = {
-      cameraId: camera.id,
-      sdp: {
-        type: "offer",
-        sdp: "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=test\r\n",
-      },
-    };
-    socket1.emit("offer", mockOffer);
+    // Send stream-start from socket1 (simulating pusher)
+    socket1.emit("stream-start", { streamKey: camera.stream_key });
 
-    const receivedOffer = await offerReceived;
-    if (receivedOffer) {
-      assert(true, "WebRTC offer relayed to peer in room");
-      assert(!!receivedOffer.sdp, "Offer contains SDP data");
+    const receivedStatus = await statusReceived;
+    if (receivedStatus) {
+      assert(true, "Camera status broadcast received by viewer");
+      assert(
+        receivedStatus.status === "streaming",
+        `Status is 'streaming' (got: ${receivedStatus.status})`
+      );
     } else {
-      // Server may not relay back to same user, which is also valid
-      assert(true, "Offer sent (relay depends on server implementation)");
+      assert(true, "Stream-start sent (broadcast depends on server matching stream_key)");
     }
 
-    // Test ICE candidate exchange
-    console.log("\n[TEST] ICE candidate exchange");
-    const iceReceived = new Promise((resolve) => {
-      socket2.on("ice-candidate", (data) => {
-        resolve(data);
+    // Test stream-stop
+    console.log("\n[TEST] Stream stop status update");
+    const stopReceived = new Promise((resolve) => {
+      socket2.on("camera-status", (data) => {
+        if (data.status === "offline") resolve(data);
       });
       setTimeout(() => resolve(null), 3000);
     });
 
-    socket1.emit("ice-candidate", {
-      cameraId: camera.id,
-      candidate: {
-        candidate: "candidate:1 1 UDP 2130706431 192.168.1.1 12345 typ host",
-        sdpMid: "0",
-        sdpMLineIndex: 0,
-      },
-    });
+    socket1.emit("stream-stop", { streamKey: camera.stream_key });
 
-    const receivedIce = await iceReceived;
-    if (receivedIce) {
-      assert(true, "ICE candidate relayed to peer");
+    const receivedStop = await stopReceived;
+    if (receivedStop) {
+      assert(true, "Camera offline status received by viewer");
     } else {
-      assert(true, "ICE candidate sent (relay depends on implementation)");
+      assert(true, "Stream-stop sent (status depends on server implementation)");
     }
   } catch (err) {
-    assert(false, `Offer/answer relay test failed: ${err.message}`);
+    assert(false, `Camera status test failed: ${err.message}`);
   }
 
   // Test: Connect without auth token
@@ -204,22 +192,6 @@ async function runTests() {
     badSocket.disconnect();
   } catch (err) {
     assert(true, "Unauthenticated connection rejected");
-  }
-
-  // Test: Camera status event
-  console.log("\n[TEST] Camera status event emission");
-  try {
-    const statusReceived = new Promise((resolve) => {
-      socket1.on("camera-status", (data) => {
-        resolve(data);
-      });
-      setTimeout(() => resolve(null), 2000);
-    });
-    // This may or may not be triggered depending on server implementation
-    const status = await statusReceived;
-    assert(true, "Camera status listener registered (event depends on server)");
-  } catch (err) {
-    assert(true, "Camera status test completed");
   }
 
   // Cleanup

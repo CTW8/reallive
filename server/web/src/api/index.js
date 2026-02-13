@@ -58,3 +58,21 @@ export const cameraApi = {
     return request(`/cameras/${id}/stream`)
   },
 }
+
+export const dashboardApi = {
+  getStats() {
+    return request('/dashboard/stats')
+  },
+  getHealth() {
+    return request('/health')
+  },
+}
+
+export const sessionApi = {
+  list(limit = 20, offset = 0) {
+    return request(`/sessions?limit=${limit}&offset=${offset}`)
+  },
+  getActive() {
+    return request('/sessions/active')
+  },
+}

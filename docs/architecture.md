@@ -6,46 +6,53 @@ RealLive is a video surveillance system consisting of four major components:
 
 ```
 +------------------+          +------------------+          +------------------+
-|   Pusher (C++)   |  WebRTC  |   Server         |  WebRTC  |   Web UI (Vue)   |
-|   Raspberry Pi 5 | -------> |   Node.js        | -------> |   Browser        |
-|   CSI Camera     | Signaling|   Express + WS   | Signaling|                  |
-+------------------+  (WS)    +------------------+  (WS)    +------------------+
+|   Pusher (C++)   |   RTMP   |   SRS Media      | HTTP-FLV |   Web UI (Vue)   |
+|   Raspberry Pi 5 | -------> |   Server         | -------> |   Browser        |
+|   CSI Camera     |          |                  |          |   mpegts.js      |
++------------------+          +------------------+          +------------------+
                                       |
-                                      | WebRTC/RTMP
+                                      | HTTP-FLV
                                       v
                               +------------------+
                               |   Puller (C++)   |
                               |   Raspberry Pi 5 |
                               |   Local Storage  |
                               +------------------+
+
++------------------+
+|   Server         |  HTTP REST API + WebSocket (camera status)
+|   Node.js        |  User auth, camera management, status notifications
++------------------+
 ```
 
 ### Module Responsibilities
 
 | Module    | Technology       | Role                                        |
 |-----------|-----------------|---------------------------------------------|
-| Server    | Node.js/Express | Authentication, API, signaling relay, DB    |
-| Web UI    | Vue 3           | Camera management, live stream viewing      |
-| Pusher    | C++             | Camera capture, encoding, stream publishing |
-| Puller    | C++             | Stream receiving, decoding, local storage   |
+| Server    | Node.js/Express | Authentication, API, camera status signaling |
+| Web UI    | Vue 3           | Camera management, live HTTP-FLV playback   |
+| Pusher    | C++             | Camera capture, encoding, RTMP push to SRS  |
+| Puller    | C++             | HTTP-FLV receive from SRS, decode, storage  |
+| SRS       | Media Server    | RTMP ingest, HTTP-FLV output                |
 
 ## 2. Communication Protocols
 
-### Primary: WebRTC
-- Ultra-low latency (< 500ms typical)
-- Native browser support for Web UI playback
-- P2P capable with STUN/TURN fallback
-- Supports H.264 video + Opus audio
+### Media: RTMP (Push)
+- Pusher publishes live stream to SRS via RTMP
+- H.264 video + AAC audio
+- Reliable TCP-based delivery
+
+### Media: HTTP-FLV (Pull)
+- Web UI and Puller receive live stream from SRS via HTTP-FLV
+- Low latency (1-3s typical)
+- Native browser support via mpegts.js
+- URL format: `http://<srs-host>/live/<stream_key>.flv`
 
 ### Signaling: WebSocket
 - Path: `/ws/signaling`
-- Used for WebRTC offer/answer/ICE candidate exchange
-- Camera status updates and real-time notifications
+- Camera status updates (online/offline/streaming)
+- Real-time notifications
 - JSON message format
-
-### Backup: RTMP
-- Fallback for environments where WebRTC is not available
-- Server relays via simple RTMP proxy if needed
 
 ### Business API: HTTP REST
 - User authentication (register, login)
@@ -58,10 +65,9 @@ RealLive is a video surveillance system consisting of four major components:
 ### Technology Stack
 - **Runtime**: Node.js
 - **Framework**: Express.js
-- **WebSocket**: Socket.io (signaling)
+- **WebSocket**: Socket.io (camera status signaling)
 - **Database**: SQLite3 (via better-sqlite3)
 - **Authentication**: JWT (jsonwebtoken + bcrypt)
-- **Media**: WebRTC signaling relay
 
 ### Server Modules
 ```
@@ -80,7 +86,7 @@ server/
 │   │   ├── user.js         # User model
 │   │   └── camera.js       # Camera model
 │   └── signaling/
-│       └── index.js        # WebRTC signaling via Socket.io
+│       └── index.js        # Camera status signaling via Socket.io
 ├── web/                    # Vue frontend
 └── package.json
 ```
@@ -124,7 +130,33 @@ CREATE TABLE sessions (
 users 1---* cameras 1---* sessions
 ```
 
-## 5. Pusher Architecture (C++)
+## 5. Media Server (SRS)
+
+### Role
+SRS (Simple Realtime Server) serves as the media relay:
+- Receives RTMP streams from Pusher
+- Outputs HTTP-FLV streams to Web UI and Puller
+
+### Stream URL Mapping
+- RTMP push: `rtmp://<srs-host>/live/<stream_key>`
+- HTTP-FLV pull: `http://<srs-host>/live/<stream_key>.flv`
+
+### Key Configuration
+```conf
+listen              1935;
+max_connections     1000;
+http_server {
+    enabled         on;
+    listen          80;
+}
+vhost __defaultVhost__ {
+    http_remux {
+        enabled     on;
+    }
+}
+```
+
+## 6. Pusher Architecture (C++)
 
 ### Platform Abstraction Layer
 
@@ -158,7 +190,7 @@ public:
     virtual void flush() = 0;
 };
 
-// IStreamer - Streaming abstraction
+// IStreamer - RTMP streaming abstraction
 class IStreamer {
 public:
     virtual ~IStreamer() = default;
@@ -172,15 +204,15 @@ public:
 - **Camera Capture**: libcamera API for CSI camera access
 - **Video Encoding**: V4L2 M2M hardware H.264 encoder (Broadcom VideoCore)
 - **Audio Capture**: ALSA (Advanced Linux Sound Architecture)
-- **Streaming**: libdatachannel (WebRTC) or librtmp (RTMP fallback)
+- **Streaming**: FFmpeg libavformat for RTMP output to SRS
 
 ### Pusher Pipeline
 ```
-CSI Camera --> libcamera capture --> V4L2 M2M H.264 encode --> WebRTC send
-Microphone --> ALSA capture -----> Opus encode ------------> WebRTC send
+CSI Camera --> libcamera capture --> V4L2 M2M H.264 encode --> RTMP push to SRS
+Microphone --> ALSA capture -----> AAC encode --------------> RTMP push to SRS
 ```
 
-## 6. Puller Architecture (C++)
+## 7. Puller Architecture (C++)
 
 ### Platform Abstraction Layer
 
@@ -223,18 +255,18 @@ public:
 ```
 
 ### Raspberry Pi 5 Implementation
-- **Stream Receiving**: libdatachannel (WebRTC) or FFmpeg (RTMP)
+- **Stream Receiving**: FFmpeg libavformat for HTTP-FLV input from SRS
 - **Decoding**: V4L2 M2M hardware H.264 decoder
 - **Storage**: FFmpeg muxer for MP4 file output
 - **Rendering**: DRM/KMS for optional local preview
 
 ### Puller Pipeline
 ```
-WebRTC receive --> V4L2 M2M H.264 decode --> MP4 muxer --> Local file
-                                         --> DRM/KMS   --> Display (optional)
+HTTP-FLV from SRS --> FFmpeg demux --> V4L2 M2M H.264 decode --> MP4 muxer --> Local file
+                                                              --> DRM/KMS   --> Display (optional)
 ```
 
-## 7. API Interface Design
+## 8. API Interface Design
 
 ### Authentication
 
@@ -251,19 +283,18 @@ WebRTC receive --> V4L2 M2M H.264 decode --> MP4 muxer --> Local file
 | POST   | /api/cameras             | Register new camera      | Yes  |
 | PUT    | /api/cameras/:id         | Update camera info       | Yes  |
 | DELETE | /api/cameras/:id         | Remove camera            | Yes  |
-| GET    | /api/cameras/:id/stream  | Get stream connection info | Yes |
+| GET    | /api/cameras/:id/stream  | Get stream info (FLV URL)| Yes  |
 
 ### WebSocket Signaling
 
 | Event              | Direction        | Description                    |
 |--------------------|------------------|--------------------------------|
-| join-room          | Client -> Server | Join camera's signaling room   |
-| offer              | Client -> Server | WebRTC SDP offer               |
-| answer             | Server -> Client | WebRTC SDP answer              |
-| ice-candidate      | Bidirectional    | ICE candidate exchange         |
-| camera-status      | Server -> Client | Camera online/offline status   |
+| join-room          | Client -> Server | Join camera's status room      |
+| camera-status      | Server -> Client | Camera online/offline/streaming|
+| stream-start       | Client -> Server | Pusher notifies stream started |
+| stream-stop        | Client -> Server | Pusher notifies stream stopped |
 
-## 8. Project Directory Structure
+## 9. Project Directory Structure
 
 ```
 reallive/
@@ -305,11 +336,11 @@ reallive/
 └── README.md
 ```
 
-## 9. Security Considerations
+## 10. Security Considerations
 
 - All passwords hashed with bcrypt (cost factor >= 12)
 - JWT tokens with expiration (24h default)
 - Stream keys are unique random UUIDs
 - HTTPS in production
-- WebRTC connections encrypted via DTLS-SRTP
+- SRS supports stream authentication via HTTP callbacks
 - Input validation on all API endpoints

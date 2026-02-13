@@ -1,6 +1,6 @@
 {
     "server": {
-        "url": "rtmp://localhost:1935/live",
+        "url": "http://localhost/live/stream.flv",
         "stream_key": ""
     },
     "storage": {

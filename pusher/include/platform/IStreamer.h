@@ -12,6 +12,12 @@ struct StreamConfig {
     std::string streamKey;
     int connectTimeoutMs = 5000;
     int writeTimeoutMs = 3000;
+
+    // Video codec parameters for the muxer (SPS/PPS extradata)
+    const uint8_t* videoExtraData = nullptr;
+    int videoExtraDataSize = 0;
+    int videoWidth = 0;
+    int videoHeight = 0;
 };
 
 class IStreamer {

@@ -5,20 +5,35 @@ Real-time video surveillance system with live streaming support.
 ## Components
 
 - **Server** - Node.js backend with Express.js, SQLite, and Vue 3 frontend
-- **Pusher** - C++ cross-platform stream publisher (camera capture + encoding + streaming)
-- **Puller** - C++ cross-platform stream receiver (receiving + decoding + local storage)
+- **Pusher** - C++ stream publisher (camera capture + H.264 encoding + RTMP push)
+- **Puller** - C++ stream receiver (HTTP-FLV receive + decoding + MP4 storage)
+- **SRS** - Media server for RTMP ingest and HTTP-FLV output
 
 ## Architecture
 
-The system uses WebRTC for low-latency real-time video streaming with WebSocket-based signaling. See [docs/architecture.md](docs/architecture.md) for the full architecture design.
+```
+Pusher --RTMP--> SRS --HTTP-FLV--> Web UI (mpegts.js)
+                     --HTTP-FLV--> Puller (FFmpeg -> MP4)
+```
+
+The system uses RTMP for stream publishing and HTTP-FLV for playback. SRS media server handles protocol conversion. See [docs/architecture.md](docs/architecture.md) for the full architecture design.
 
 ## Current Platform
 
 - Server: Any platform with Node.js
+- SRS: Linux (Docker or source build)
 - Pusher: Raspberry Pi 5 + CSI Camera (libcamera + V4L2 M2M H.264)
 - Puller: Raspberry Pi 5 (FFmpeg + V4L2 hardware decode + MP4 storage)
 
 ## Quick Start
+
+### SRS Media Server
+
+```bash
+docker run -d --name srs \
+  -p 1935:1935 -p 80:80 \
+  ossrs/srs:5
+```
 
 ### Server
 

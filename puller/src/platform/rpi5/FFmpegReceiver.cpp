@@ -22,10 +22,20 @@ FFmpegReceiver::~FFmpegReceiver() {
 bool FFmpegReceiver::connect(const std::string& url) {
     url_ = url;
 
-    // Set up options for RTMP
     AVDictionary* opts = nullptr;
-    av_dict_set(&opts, "rtmp_live", "live", 0);
-    av_dict_set(&opts, "timeout", "5000000", 0); // 5 second timeout
+
+    // Set protocol-specific options based on URL scheme
+    if (url.find("rtmp://") == 0) {
+        av_dict_set(&opts, "rtmp_live", "live", 0);
+        av_dict_set(&opts, "timeout", "5000000", 0);
+    } else if (url.find("http://") == 0 || url.find("https://") == 0) {
+        // HTTP-FLV: reconnect on error, set timeouts
+        av_dict_set(&opts, "reconnect", "1", 0);
+        av_dict_set(&opts, "reconnect_streamed", "1", 0);
+        av_dict_set(&opts, "reconnect_delay_max", "5", 0);
+        av_dict_set(&opts, "timeout", "5000000", 0);
+        av_dict_set(&opts, "rw_timeout", "5000000", 0);
+    }
 
     int ret = avformat_open_input(&formatCtx_, url.c_str(), nullptr, &opts);
     av_dict_free(&opts);

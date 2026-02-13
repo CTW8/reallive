@@ -1,0 +1,15 @@
+{
+    "url": "rtmp://localhost:1935/live",
+    "stream_key": "598c05a2-8386-4dac-8711-2ec9a9b3b2f7",
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "gop": 15,
+    "codec": "h264",
+    "bitrate": 2000000,
+    "profile": "baseline",
+    "enable_audio": false,
+    "sample_rate": 44100,
+    "channels": 1,
+    "audio_device": "default"
+}

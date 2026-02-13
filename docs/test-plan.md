@@ -4,21 +4,21 @@
 
 ### Scope
 - **Server**: Node.js/Express REST API, JWT authentication, SQLite database, Socket.io signaling
-- **Pusher**: C++ camera capture, encoding, WebRTC streaming on Raspberry Pi 5
-- **Puller**: C++ stream receiving, decoding, MP4 storage on Raspberry Pi 5
-- **Web UI**: Vue 3 frontend camera management and live stream playback
+- **Pusher**: C++ camera capture, encoding, RTMP streaming on Raspberry Pi 5
+- **Puller**: C++ HTTP-FLV receiving, decoding, MP4 storage on Raspberry Pi 5
+- **Web UI**: Vue 3 frontend camera management and HTTP-FLV live playback
 - **End-to-End**: Full pipeline from camera capture to playback and recording
 
 ### Objectives
 1. Validate all REST API endpoints return correct responses and status codes
 2. Verify user authentication flow (register, login, JWT token lifecycle)
 3. Confirm Camera CRUD operations and ownership enforcement
-4. Test WebSocket signaling message routing between pusher, puller, and Web UI
+4. Test WebSocket camera status signaling between components
 5. Verify C++ interface implementations compile and link correctly
 6. Validate pusher configuration file parsing and error handling
 7. Validate puller storage and file rotation logic
 8. Measure end-to-end latency, bandwidth usage, and resource consumption
-9. Confirm the full pipeline works: capture -> encode -> stream -> receive -> store
+9. Confirm the full pipeline works: capture -> encode -> RTMP push -> SRS -> HTTP-FLV pull -> store/playback
 
 ## 2. Test Environment
 
@@ -33,7 +33,8 @@
 - **Node.js**: v18 LTS or v20 LTS
 - **C++ Compiler**: GCC 12+ with C++17 support
 - **CMake**: 3.22+
-- **FFmpeg**: 5.x+ (for puller MP4 muxing)
+- **FFmpeg**: 5.x+ (for puller HTTP-FLV receive and MP4 muxing)
+- **SRS**: v5.x (media server for RTMP->HTTP-FLV)
 - **libcamera**: System-provided (for pusher capture)
 - **SQLite**: 3.40+
 
@@ -60,12 +61,12 @@
 | S-009   | Camera Update    | Update camera name with valid auth            | 200, updated camera object           |
 | S-010   | Camera Delete    | Delete own camera                             | 200, success message                 |
 | S-011   | Camera Delete    | Delete another user's camera                  | 403 Forbidden                        |
-| S-012   | Camera Stream    | Get stream info for own camera                | 200, stream connection details       |
+| S-012   | Camera Stream    | Get stream info for own camera                | 200, FLV URL and stream details      |
 | S-013   | Auth Middleware   | Access protected route without token          | 401 Unauthorized                     |
 | S-014   | Auth Middleware   | Access protected route with expired token     | 401 Unauthorized                     |
 | S-015   | WebSocket        | Connect to signaling namespace                | Connection established               |
-| S-016   | WebSocket        | Join camera room                              | Room joined confirmation             |
-| S-017   | WebSocket        | Send WebRTC offer, receive answer relay       | Offer forwarded to room peers        |
+| S-016   | WebSocket        | Join camera status room                       | Room joined confirmation             |
+| S-017   | WebSocket        | Send stream-start, receive camera-status      | Status broadcast to room members     |
 
 ### 3.2 Pusher Unit Tests
 
@@ -76,14 +77,14 @@
 | P-003   | Config Parser      | Parse invalid JSON                      | Error reported gracefully          |
 | P-004   | ICameraCapture     | Mock camera open/start/stop lifecycle   | State transitions are correct      |
 | P-005   | IEncoder           | Mock encoder init/encode/flush          | Encoded packets returned           |
-| P-006   | IStreamer          | Mock streamer connect/send/disconnect   | Connection state managed correctly |
+| P-006   | IStreamer          | Mock RTMP streamer connect/send/disconnect | Connection state managed correctly |
 
 ### 3.3 Puller Unit Tests
 
 | Test ID | Component          | Test Description                        | Expected Result                    |
 |---------|--------------------|-----------------------------------------|------------------------------------|
 | R-001   | Config Parser      | Parse valid JSON config file            | All fields populated correctly     |
-| R-002   | IStreamReceiver    | Mock receiver connect/receive/disconnect| State transitions are correct      |
+| R-002   | IStreamReceiver    | Mock HTTP-FLV receiver connect/receive  | State transitions are correct      |
 | R-003   | IDecoder           | Mock decoder init/decode/flush          | Decoded frames returned            |
 | R-004   | IStorage           | Mock storage open/write/close           | Write operations tracked           |
 | R-005   | IStorage           | Storage file rotation on size limit     | New file created at threshold      |
@@ -95,16 +96,16 @@
 |---------|----------------------|----------------------------------------------------|---------------------------------------|
 | I-001   | Server + DB          | Register user, verify in SQLite                    | User row created with hashed password |
 | I-002   | Server + DB          | Create camera, verify stream_key generated         | Camera row with UUID stream_key       |
-| I-003   | Server + WebSocket   | Connect pusher, join room, relay offer             | Signaling messages relayed correctly  |
-| I-004   | Pusher + Server      | Pusher authenticates and starts signaling          | WebSocket connected, room joined      |
-| I-005   | Puller + Server      | Puller authenticates and receives stream info      | Stream URL and key obtained           |
-| I-006   | Puller + Storage     | Receive mock packets and write MP4 file            | Valid MP4 file on disk                |
+| I-003   | Server + WebSocket   | Connect client, join room, receive camera-status   | Status messages delivered correctly   |
+| I-004   | Pusher + SRS         | Pusher publishes RTMP stream to SRS                | SRS accepts and lists the stream      |
+| I-005   | SRS + Puller         | Puller connects to SRS HTTP-FLV endpoint           | Puller receives FLV stream data       |
+| I-006   | Puller + Storage     | Receive packets from SRS and write MP4 file        | Valid MP4 file on disk                |
 
 ## 5. End-to-End Test Plan
 
 | Test ID | Description                                    | Expected Result                               |
 |---------|------------------------------------------------|-----------------------------------------------|
-| E-001   | Full pipeline: register -> create camera -> push -> pull -> verify recording | MP4 file on disk, valid and playable |
+| E-001   | Full pipeline: register -> create camera -> RTMP push -> SRS -> HTTP-FLV pull -> verify recording | MP4 file on disk, valid and playable |
 | E-002   | Multiple cameras from same user                | All streams handled independently             |
 | E-003   | Server restart with persistent data            | Users and cameras survive restart             |
 | E-004   | Pusher disconnect and reconnect                | Stream recovers after reconnection            |
@@ -116,7 +117,7 @@
 
 | Metric                      | Target              | Measurement Method                  |
 |-----------------------------|---------------------|-------------------------------------|
-| End-to-end video latency    | < 500ms             | Timestamp comparison (NTP synced)   |
+| End-to-end video latency    | < 3s (HTTP-FLV)     | Timestamp comparison (NTP synced)   |
 | Pusher CPU usage            | < 30% (single core) | `top` / `pidstat` during streaming  |
 | Puller CPU usage            | < 25% (single core) | `top` / `pidstat` during streaming  |
 | Server CPU usage            | < 10% (single core) | `top` / `pidstat` during signaling  |
@@ -131,13 +132,14 @@
 | Max concurrent cameras      | >= 4                | Load test with multiple pushers     |
 
 ### Performance Test Procedure
-1. Start server and measure idle resource usage (baseline)
-2. Start one pusher at 1080p and measure CPU/memory for 60 seconds
-3. Start one puller and measure CPU/memory for 60 seconds
-4. Measure end-to-end latency using embedded timestamps
-5. Repeat with 2, 3, 4 concurrent cameras
-6. Record network bandwidth usage per stream
-7. Verify recording file integrity after extended run (30 minutes)
+1. Start SRS and server, measure idle resource usage (baseline)
+2. Start one pusher at 1080p, verify RTMP stream accepted by SRS
+3. Start one puller via HTTP-FLV, measure CPU/memory for 60 seconds
+4. Open Web UI, verify HTTP-FLV playback via mpegts.js
+5. Measure end-to-end latency using embedded timestamps
+6. Repeat with 2, 3, 4 concurrent cameras
+7. Record network bandwidth usage per stream
+8. Verify recording file integrity after extended run (30 minutes)
 
 ## 7. Test Execution Schedule
 
@@ -146,6 +148,6 @@
 | Phase 1          | S-001~S-017| High     | Server implementation complete  |
 | Phase 2          | P-001~P-006| High     | Pusher build system ready       |
 | Phase 3          | R-001~R-006| High     | Puller build system ready       |
-| Phase 4          | I-001~I-006| Medium   | Server + one client ready       |
+| Phase 4          | I-001~I-006| Medium   | Server + SRS + one client ready |
 | Phase 5          | E-001~E-005| Medium   | All components ready            |
 | Phase 6          | Performance| Low      | E2E tests passing               |

@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(npm --version:*)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(lsof:*)",
+      "Bash(ss:*)",
+      "Bash(kill:*)",
+      "Bash(sudo iptables:*)",
+      "Bash(sudo nft list:*)",
+      "Bash(curl:*)",
+      "Bash(ip:*)",
+      "Bash(sudo apt install:*)",
+      "Bash(npm run build:*)",
+      "Bash(cmake:*)",
+      "Bash(make:*)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(for dev in /dev/video*)",
+      "Bash(do echo \"=== $dev ===\")",
+      "Bash(v4l2-ctl --device=$dev --all)",
+      "Bash(done)",
+      "Bash(ffmpeg:*)",
+      "Bash(pkg-config:*)",
+      "Bash(dpkg:*)",
+      "Bash(./pusher/build/reallive-pusher:*)",
+      "Bash(timeout 10 /home/lz/reallive/pusher/build/reallive-pusher:*)",
+      "Bash(echo:*)",
+      "Bash(sudo docker ps:*)",
+      "Bash(sudo docker start:*)",
+      "Bash(sudo ss:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwidXNlcm5hbWUiOiJ0ZXN0MiIsImlhdCI6MTc3MDk1NzI1MCwiZXhwIjoxNzcxMDQzNjUwfQ.vs45gyGWNVpcO98yK0ag6B0ALuNkCmAvOMDNSubWdyg\")",
+      "Bash(timeout 3 ffprobe:*)"
+    ]
+  }
+}
