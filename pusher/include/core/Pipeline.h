@@ -5,6 +5,7 @@
 #include "platform/IAudioCapture.h"
 #include "platform/IEncoder.h"
 #include "platform/IStreamer.h"
+#include "core/LocalRecorder.h"
 #include <atomic>
 #include <thread>
 #include <memory>
@@ -36,6 +37,7 @@ private:
     AudioCapturePtr audio_;
     EncoderPtr encoder_;
     StreamerPtr streamer_;
+    std::unique_ptr<LocalRecorder> recorder_;
 
     std::thread videoThread_;
     std::thread audioThread_;

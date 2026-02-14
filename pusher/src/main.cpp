@@ -1,4 +1,5 @@
 #include "core/Config.h"
+#include "core/ControlServer.h"
 #include "core/Pipeline.h"
 
 #include <csignal>
@@ -10,11 +11,15 @@ using namespace reallive;
 namespace {
 
 Pipeline* g_pipeline = nullptr;
+ControlServer* g_controlServer = nullptr;
 
 void signalHandler(int sig) {
     std::cout << "\n[Main] Signal " << sig << " received, stopping..." << std::endl;
     if (g_pipeline) {
         g_pipeline->stop();
+    }
+    if (g_controlServer) {
+        g_controlServer->stop();
     }
 }
 
@@ -36,6 +41,13 @@ int main(int argc, char* argv[]) {
     // Create and run pipeline
     Pipeline pipeline;
     g_pipeline = &pipeline;
+    ControlServer controlServer(config.get());
+    g_controlServer = &controlServer;
+
+    if (!controlServer.start()) {
+        std::cerr << "[Main] Failed to start control server." << std::endl;
+        return 1;
+    }
 
     if (!pipeline.init(config.get())) {
         std::cerr << "[Main] Failed to initialize pipeline." << std::endl;
@@ -55,7 +67,9 @@ int main(int argc, char* argv[]) {
     }
 
     pipeline.stop();
+    controlServer.stop();
     g_pipeline = nullptr;
+    g_controlServer = nullptr;
 
     std::cout << "[Main] Exiting." << std::endl;
     return 0;

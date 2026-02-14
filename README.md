@@ -37,6 +37,19 @@ docker run -d --name srs \
 
 ### Server
 
+配置文件：`server/config/server.json`
+
+```json
+{
+  "port": 80,
+  "srsApi": "http://localhost:1985",
+  "edgeReplay": {
+    "url": "http://127.0.0.1:8090",
+    "timeoutMs": 1500
+  }
+}
+```
+
 ```bash
 cd server
 npm install

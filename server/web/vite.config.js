@@ -1,18 +1,22 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
+const target = process.env.VITE_PROXY_TARGET || 'http://localhost:3000'
+
 export default defineConfig({
   plugins: [vue()],
   server: {
     proxy: {
-      '/api': 'http://localhost:3000',
-      '/live': 'http://localhost:3000',
+      '/api': target,
+      '/live': target,
+      '/history': target,
+      '/history-files': target,
       '/ws': {
-        target: 'http://localhost:3000',
+        target,
         ws: true,
       },
       '/socket.io': {
-        target: 'http://localhost:3000',
+        target,
         ws: true,
       },
     },

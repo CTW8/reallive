@@ -31,28 +31,43 @@ let refreshInterval = null
 const streamingCount = computed(() => dashboardStore.stats.cameras?.streaming || 0)
 
 onMounted(async () => {
-  await cameraStore.fetchCameras()
+  await dashboardStore.fetchHealth()
+
+  try {
+    await cameraStore.fetchCameras()
+  } catch (err) {
+    console.error('[Dashboard] Failed to fetch cameras:', err)
+    if (err?.status === 401) {
+      auth.logout()
+      router.push('/login')
+      return
+    }
+  }
+
   dashboardStore.fetchStats()
   dashboardStore.fetchRecentSessions()
-  dashboardStore.fetchHealth()
 
-  socket = connectSignaling(auth.token)
-  dashboardStore.setSocketConnected(socket.connected)
+  try {
+    socket = connectSignaling(auth.token)
+    dashboardStore.setSocketConnected(socket.connected)
 
-  socket.on('connect', () => dashboardStore.setSocketConnected(true))
-  socket.on('disconnect', () => dashboardStore.setSocketConnected(false))
+    socket.on('connect', () => dashboardStore.setSocketConnected(true))
+    socket.on('disconnect', () => dashboardStore.setSocketConnected(false))
 
-  socket.emit('join-room', { room: `dashboard-${auth.user?.id}` })
+    socket.emit('join-room', { room: `dashboard-${auth.user?.id}` })
 
-  socket.on('camera-status', ({ cameraId, status }) => {
-    cameraStore.updateCameraStatus(cameraId, status)
-    dashboardStore.fetchStats()
-    dashboardStore.fetchRecentSessions()
-  })
+    socket.on('camera-status', ({ cameraId, status }) => {
+      cameraStore.updateCameraStatus(cameraId, status)
+      dashboardStore.fetchStats()
+      dashboardStore.fetchRecentSessions()
+    })
 
-  socket.on('activity-event', (event) => {
-    dashboardStore.pushActivityEvent(event)
-  })
+    socket.on('activity-event', (event) => {
+      dashboardStore.pushActivityEvent(event)
+    })
+  } catch (err) {
+    console.error('[Dashboard] Failed to connect signaling:', err)
+  }
 
   refreshInterval = setInterval(() => {
     dashboardStore.fetchStats()

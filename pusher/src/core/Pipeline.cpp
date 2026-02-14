@@ -6,14 +6,279 @@
 #include <iomanip>
 #include <vector>
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 
 // Platform-specific includes (Raspberry Pi 5)
 #include "platform/rpi5/LibcameraCapture.h"
 #include "platform/rpi5/AvcodecEncoder.h"
 #include "platform/rpi5/AlsaCapture.h"
 #include "platform/rpi5/RtmpStreamer.h"
+#include "core/LocalRecorder.h"
 
 namespace reallive {
+
+namespace {
+
+constexpr std::array<uint8_t, 16> kTelemetrySeiUuid = {
+    0x52, 0x65, 0x61, 0x4C, 0x69, 0x76, 0x65, 0x53,
+    0x65, 0x69, 0x4D, 0x65, 0x74, 0x72, 0x69, 0x63
+};
+
+struct SystemTelemetry {
+    double cpuPct = 0.0;
+    double memoryPct = 0.0;
+    double memoryUsedMb = 0.0;
+    double memoryTotalMb = 0.0;
+    double storagePct = 0.0;
+    double storageUsedGb = 0.0;
+    double storageTotalGb = 0.0;
+};
+
+struct CpuCounters {
+    uint64_t total = 0;
+    uint64_t idle = 0;
+    bool valid = false;
+};
+
+double clampPercent(double value) {
+    if (!std::isfinite(value)) return 0.0;
+    if (value < 0.0) return 0.0;
+    if (value > 100.0) return 100.0;
+    return value;
+}
+
+std::string jsonEscape(const std::string& input) {
+    std::string out;
+    out.reserve(input.size());
+    for (char ch : input) {
+        switch (ch) {
+        case '\\': out += "\\\\"; break;
+        case '"': out += "\\\""; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default: out += ch; break;
+        }
+    }
+    return out;
+}
+
+std::string formatNumber(double value, int precision = 1) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(precision) << value;
+    return oss.str();
+}
+
+int64_t wallClockMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+}
+
+CpuCounters readCpuCounters() {
+    std::ifstream file("/proc/stat");
+    if (!file.is_open()) return {};
+
+    std::string line;
+    if (!std::getline(file, line)) return {};
+
+    std::istringstream iss(line);
+    std::string cpu;
+    uint64_t user = 0;
+    uint64_t nice = 0;
+    uint64_t system = 0;
+    uint64_t idle = 0;
+    uint64_t iowait = 0;
+    uint64_t irq = 0;
+    uint64_t softirq = 0;
+    uint64_t steal = 0;
+    uint64_t guest = 0;
+    uint64_t guestNice = 0;
+    iss >> cpu >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal >> guest >> guestNice;
+    if (cpu != "cpu") return {};
+
+    CpuCounters counters;
+    counters.idle = idle + iowait;
+    counters.total = user + nice + system + idle + iowait + irq + softirq + steal + guest + guestNice;
+    counters.valid = true;
+    return counters;
+}
+
+class SystemUsageSampler {
+public:
+    SystemTelemetry sample() {
+        SystemTelemetry telemetry;
+
+        CpuCounters current = readCpuCounters();
+        if (current.valid && previous_.valid && current.total > previous_.total) {
+            const double totalDelta = static_cast<double>(current.total - previous_.total);
+            const double idleDelta = static_cast<double>(current.idle - previous_.idle);
+            telemetry.cpuPct = clampPercent((1.0 - idleDelta / totalDelta) * 100.0);
+        } else {
+            telemetry.cpuPct = 0.0;
+        }
+        if (current.valid) {
+            previous_ = current;
+        }
+
+        std::ifstream memFile("/proc/meminfo");
+        if (memFile.is_open()) {
+            std::string key;
+            uint64_t valueKb = 0;
+            std::string unit;
+            uint64_t memTotalKb = 0;
+            uint64_t memAvailableKb = 0;
+            while (memFile >> key >> valueKb >> unit) {
+                if (key == "MemTotal:") memTotalKb = valueKb;
+                if (key == "MemAvailable:") memAvailableKb = valueKb;
+                if (memTotalKb > 0 && memAvailableKb > 0) break;
+            }
+
+            if (memTotalKb > 0) {
+                const uint64_t memUsedKb = memTotalKb > memAvailableKb ? (memTotalKb - memAvailableKb) : 0;
+                telemetry.memoryTotalMb = static_cast<double>(memTotalKb) / 1024.0;
+                telemetry.memoryUsedMb = static_cast<double>(memUsedKb) / 1024.0;
+                telemetry.memoryPct = clampPercent(static_cast<double>(memUsedKb) * 100.0 / static_cast<double>(memTotalKb));
+            }
+        }
+
+        try {
+            const auto space = std::filesystem::space("/");
+            if (space.capacity > 0) {
+                const uint64_t used = space.capacity > space.available ? (space.capacity - space.available) : 0;
+                telemetry.storageTotalGb = static_cast<double>(space.capacity) / (1024.0 * 1024.0 * 1024.0);
+                telemetry.storageUsedGb = static_cast<double>(used) / (1024.0 * 1024.0 * 1024.0);
+                telemetry.storagePct = clampPercent(static_cast<double>(used) * 100.0 / static_cast<double>(space.capacity));
+            }
+        } catch (...) {
+        }
+
+        return telemetry;
+    }
+
+private:
+    CpuCounters previous_;
+};
+
+void appendSeiField(std::vector<uint8_t>& rbsp, int value) {
+    while (value >= 0xFF) {
+        rbsp.push_back(0xFF);
+        value -= 0xFF;
+    }
+    rbsp.push_back(static_cast<uint8_t>(value));
+}
+
+std::vector<uint8_t> escapeRbsp(const std::vector<uint8_t>& rbsp) {
+    std::vector<uint8_t> ebsp;
+    ebsp.reserve(rbsp.size() + 16);
+    int zeroCount = 0;
+    for (uint8_t b : rbsp) {
+        if (zeroCount >= 2 && b <= 0x03) {
+            ebsp.push_back(0x03);
+            zeroCount = 0;
+        }
+        ebsp.push_back(b);
+        zeroCount = (b == 0x00) ? (zeroCount + 1) : 0;
+    }
+    return ebsp;
+}
+
+bool isAnnexBPacket(const std::vector<uint8_t>& data) {
+    if (data.size() >= 4) {
+        if (data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01) return true;
+        if (data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x00 && data[3] == 0x01) return true;
+    }
+    const size_t limit = std::min<size_t>(data.size(), 32);
+    for (size_t i = 0; i + 3 < limit; ++i) {
+        if (data[i] == 0x00 && data[i + 1] == 0x00 &&
+            (data[i + 2] == 0x01 || (data[i + 2] == 0x00 && data[i + 3] == 0x01))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string buildTelemetryPayload(const PusherConfig& config, const SystemTelemetry& telemetry, int64_t nowMs) {
+    std::ostringstream oss;
+    oss << "{"
+        << "\"v\":1,"
+        << "\"ts\":" << nowMs << ","
+        << "\"stream_key\":\"" << jsonEscape(config.stream.streamKey) << "\","
+        << "\"device\":{"
+            << "\"cpu_pct\":" << formatNumber(telemetry.cpuPct) << ","
+            << "\"mem_pct\":" << formatNumber(telemetry.memoryPct) << ","
+            << "\"mem_used_mb\":" << formatNumber(telemetry.memoryUsedMb) << ","
+            << "\"mem_total_mb\":" << formatNumber(telemetry.memoryTotalMb) << ","
+            << "\"storage_pct\":" << formatNumber(telemetry.storagePct) << ","
+            << "\"storage_used_gb\":" << formatNumber(telemetry.storageUsedGb, 2) << ","
+            << "\"storage_total_gb\":" << formatNumber(telemetry.storageTotalGb, 2)
+        << "},"
+        << "\"camera\":{"
+            << "\"width\":" << config.camera.width << ","
+            << "\"height\":" << config.camera.height << ","
+            << "\"fps\":" << config.camera.fps << ","
+            << "\"pixel_format\":\"" << jsonEscape(config.camera.pixelFormat) << "\","
+            << "\"codec\":\"" << jsonEscape(config.encoder.codec) << "\","
+            << "\"bitrate\":" << config.encoder.bitrate << ","
+            << "\"profile\":\"" << jsonEscape(config.encoder.profile) << "\","
+            << "\"gop\":" << config.encoder.gopSize << ","
+            << "\"audio_enabled\":" << (config.enableAudio ? "true" : "false")
+        << "},"
+        << "\"configurable\":{"
+            << "\"resolution\":["
+                << "{\"width\":640,\"height\":480},"
+                << "{\"width\":1280,\"height\":720},"
+                << "{\"width\":1920,\"height\":1080}"
+            << "],"
+            << "\"fps\":[10,15,24,25,30,50,60],"
+            << "\"profile\":[\"baseline\",\"main\",\"high\"],"
+            << "\"bitrate\":{\"min\":300000,\"max\":8000000,\"step\":100000},"
+            << "\"gop\":{\"min\":10,\"max\":120,\"step\":5}"
+        << "}"
+        << "}";
+    return oss.str();
+}
+
+void injectTelemetrySei(std::vector<uint8_t>& packet, const std::string& payload) {
+    if (packet.empty() || payload.empty()) return;
+
+    const int payloadSize = static_cast<int>(kTelemetrySeiUuid.size() + payload.size());
+    std::vector<uint8_t> rbsp;
+    rbsp.reserve(payload.size() + 32);
+    rbsp.push_back(0x06);
+    appendSeiField(rbsp, 5);
+    appendSeiField(rbsp, payloadSize);
+    rbsp.insert(rbsp.end(), kTelemetrySeiUuid.begin(), kTelemetrySeiUuid.end());
+    rbsp.insert(rbsp.end(), payload.begin(), payload.end());
+    rbsp.push_back(0x80);
+
+    const std::vector<uint8_t> ebsp = escapeRbsp(rbsp);
+    std::vector<uint8_t> prefix;
+    if (isAnnexBPacket(packet)) {
+        prefix.reserve(4 + ebsp.size());
+        prefix.push_back(0x00);
+        prefix.push_back(0x00);
+        prefix.push_back(0x00);
+        prefix.push_back(0x01);
+        prefix.insert(prefix.end(), ebsp.begin(), ebsp.end());
+    } else {
+        const uint32_t naluSize = static_cast<uint32_t>(ebsp.size());
+        prefix.reserve(4 + ebsp.size());
+        prefix.push_back(static_cast<uint8_t>((naluSize >> 24) & 0xFF));
+        prefix.push_back(static_cast<uint8_t>((naluSize >> 16) & 0xFF));
+        prefix.push_back(static_cast<uint8_t>((naluSize >> 8) & 0xFF));
+        prefix.push_back(static_cast<uint8_t>(naluSize & 0xFF));
+        prefix.insert(prefix.end(), ebsp.begin(), ebsp.end());
+    }
+
+    packet.insert(packet.begin(), prefix.begin(), prefix.end());
+}
+
+} // namespace
 
 Pipeline::Pipeline() = default;
 
@@ -84,6 +349,22 @@ bool Pipeline::init(const PusherConfig& config) {
     }
     std::cout << "[Pipeline] Connected to: " << config.stream.url << std::endl;
 
+    if (config_.record.enabled) {
+        recorder_ = std::make_unique<LocalRecorder>();
+        if (!recorder_->init(
+                config_.record,
+                config_.stream.streamKey,
+                config_.stream.videoExtraData,
+                config_.stream.videoExtraDataSize,
+                config_.encoder.width,
+                config_.encoder.height)) {
+            std::cerr << "[Pipeline] Failed to init local recorder" << std::endl;
+            recorder_.reset();
+        }
+    } else {
+        recorder_.reset();
+    }
+
     return true;
 }
 
@@ -137,6 +418,9 @@ void Pipeline::stop() {
     if (streamer_ && streamer_->isConnected()) {
         streamer_->disconnect();
     }
+    if (recorder_) {
+        recorder_->close();
+    }
     if (audio_ && audio_->isOpen()) {
         audio_->stop();
     }
@@ -155,10 +439,13 @@ void Pipeline::videoLoop() {
     using Clock = std::chrono::steady_clock;
     auto lastFpsTime = Clock::now();
     auto lastLogTime = Clock::now();
+    auto lastSeiTime = Clock::now() - std::chrono::milliseconds(2000);
     uint64_t fpsFrameCount = 0;
     uint64_t droppedFrames = 0;
     uint64_t totalProcessTime = 0;
     uint64_t maxProcessTime = 0;
+    SystemUsageSampler usageSampler;
+    const auto seiInterval = std::chrono::milliseconds(1000);
 
     const auto maxProcessThreshold = std::chrono::microseconds(1000000 / config_.camera.fps * 2); // 允许最大2倍帧间隔
     
@@ -197,6 +484,25 @@ void Pipeline::videoLoop() {
         // Record timing information for latency tracking
         packet.captureTime = std::chrono::duration_cast<std::chrono::microseconds>(captureTime.time_since_epoch()).count();
         packet.encodeTime = std::chrono::duration_cast<std::chrono::microseconds>(encodeEnd - encodeStart).count();
+
+        auto now = Clock::now();
+        if (now - lastSeiTime >= seiInterval) {
+            const SystemTelemetry telemetry = usageSampler.sample();
+            const std::string payload = buildTelemetryPayload(config_, telemetry, wallClockMs());
+            injectTelemetrySei(packet.data, payload);
+            lastSeiTime = now;
+        }
+
+        if (recorder_ && recorder_->isEnabled()) {
+            if (!recorder_->writeVideoPacket(packet)) {
+                static uint64_t recorderErrCount = 0;
+                recorderErrCount++;
+                if (recorderErrCount % 30 == 1) {
+                    std::cerr << "[Pipeline] Recorder write failed (" << recorderErrCount
+                              << "), continuing stream" << std::endl;
+                }
+            }
+        }
 
         // 4. Send the encoded packet
         if (!streamer_->sendVideoPacket(packet)) {
@@ -238,7 +544,6 @@ void Pipeline::videoLoop() {
         }
 
         // 每秒计算FPS和打印详细统计
-        auto now = Clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastFpsTime);
         if (elapsed.count() >= 1000) {
             currentFps_ = static_cast<double>(fpsFrameCount) * 1000.0 / elapsed.count();

@@ -18,6 +18,8 @@ set(CORE_SOURCES
     src/main.cpp
     src/core/Config.cpp
     src/core/Pipeline.cpp
+    src/core/LocalRecorder.cpp
+    src/core/ControlServer.cpp
 )
 
 # Platform sources

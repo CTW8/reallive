@@ -12,10 +12,32 @@ async function request(path, options = {}) {
   }
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
-  const data = await res.json()
+  const contentType = res.headers.get('content-type') || ''
+  let data = null
+
+  if (contentType.includes('application/json')) {
+    try {
+      data = await res.json()
+    } catch {
+      data = null
+    }
+  } else {
+    try {
+      const text = await res.text()
+      data = text ? { error: text } : null
+    } catch {
+      data = null
+    }
+  }
 
   if (!res.ok) {
-    throw new Error(data.error || `Request failed: ${res.status}`)
+    if (res.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+    }
+    const err = new Error(data?.error || `Request failed: ${res.status}`)
+    err.status = res.status
+    throw err
   }
   return data
 }
@@ -56,6 +78,26 @@ export const cameraApi = {
   },
   getStreamInfo(id) {
     return request(`/cameras/${id}/stream`)
+  },
+  getHistoryOverview(id) {
+    return request(`/cameras/${id}/history/overview`)
+  },
+  getHistoryTimeline(id, params = {}) {
+    const query = new URLSearchParams()
+    if (params.start != null) query.set('start', String(params.start))
+    if (params.end != null) query.set('end', String(params.end))
+    return request(`/cameras/${id}/history/timeline?${query.toString()}`)
+  },
+  getHistoryPlayback(id, ts) {
+    const query = new URLSearchParams()
+    if (ts != null) query.set('ts', String(ts))
+    return request(`/cameras/${id}/history/play?${query.toString()}`)
+  },
+  stopHistoryReplay(id, sessionId = null) {
+    return request(`/cameras/${id}/history/replay/stop`, {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    })
   },
 }
 

@@ -1,9 +1,12 @@
 const Camera = require('../models/camera');
 const Session = require('../models/session');
+const config = require('../config');
+const { startSeiMonitor, stopSeiMonitor, stopAllSeiMonitors } = require('./seiMonitor');
 
-const SRS_API = process.env.SRS_API || 'http://localhost:1985';
+const SRS_API = config.srsApi || 'http://localhost:1985';
 const POLL_INTERVAL = 1000; // 1 second (reduced from 5s for lower latency)
 const SUMMARY_LOG_INTERVAL = 10000; // 10s summary log to avoid noisy per-poll logs
+const OFFLINE_GRACE_POLLS = Math.max(1, Number(process.env.SRS_OFFLINE_GRACE_POLLS || 3));
 
 let io = null;
 let timer = null;
@@ -11,12 +14,28 @@ let lastSummaryLogAt = 0;
 
 // Track which stream keys are currently active (to detect changes)
 const activeStreams = new Set();
+const missingPolls = new Map();
 
 // Cache SRS stream info keyed by stream_key
 const streamInfoCache = new Map();
 
 // Track previous frame counts for FPS calculation
 const prevFrameData = new Map();
+
+function extractStreamKey(name) {
+  if (!name) return '';
+  let streamKey = String(name);
+  if (streamKey.includes('/')) {
+    const parts = streamKey.split('/');
+    streamKey = parts[parts.length - 1];
+  }
+  return streamKey;
+}
+
+function isReplayStreamKey(streamKey) {
+  if (!streamKey) return false;
+  return /__\d+_\d+\.flv$/i.test(streamKey);
+}
 
 function estimateFps(videoInfo, prev, currentFrames, nowMs) {
   const directFps = Number(videoInfo.fps);
@@ -66,15 +85,15 @@ async function syncOnce() {
   // Build set of currently active stream keys from SRS
   const currentActive = new Set();
   for (const s of streams) {
-    // SRS stream name may contain app prefix (e.g., "live/stream_key"), extract the last part
-    let streamKey = s.name;
-    if (streamKey.includes('/')) {
-      const parts = streamKey.split('/');
-      streamKey = parts[parts.length - 1];
+    const streamKey = extractStreamKey(s.name);
+    if (isReplayStreamKey(streamKey)) {
+      continue;
     }
-    
+
     if (s.publish && s.publish.active) {
       currentActive.add(streamKey);
+      missingPolls.delete(streamKey);
+      startSeiMonitor(streamKey, s.app || 'live');
 
       // Cache stream media info - handle both flat and nested structures
       const videoInfo = s.video || {};
@@ -140,12 +159,23 @@ async function syncOnce() {
         }
         console.log(`[SRS Sync] Camera "${camera.name}" started streaming`);
       }
+      activeStreams.add(streamKey);
     }
   }
 
-  // Detect stopped streams
-  for (const streamKey of activeStreams) {
+  // Detect stopped streams with debounce (avoid transient false offline)
+  const keys = Array.from(activeStreams);
+  for (const streamKey of keys) {
     if (!currentActive.has(streamKey)) {
+      const miss = (missingPolls.get(streamKey) || 0) + 1;
+      missingPolls.set(streamKey, miss);
+      if (miss < OFFLINE_GRACE_POLLS) {
+        continue;
+      }
+
+      stopSeiMonitor(streamKey);
+      missingPolls.delete(streamKey);
+
       const camera = Camera.findByStreamKey(streamKey);
       if (camera && camera.status === 'streaming') {
         Camera.updateStatus(camera.id, 'offline');
@@ -169,13 +199,8 @@ async function syncOnce() {
       // Remove cached info
       streamInfoCache.delete(streamKey);
       prevFrameData.delete(streamKey);
+      activeStreams.delete(streamKey);
     }
-  }
-
-  // Update tracking set
-  activeStreams.clear();
-  for (const key of currentActive) {
-    activeStreams.add(key);
   }
 
   const now = Date.now();
@@ -186,11 +211,11 @@ async function syncOnce() {
         ? (sampleInfo.kbps.recv_30s / 1000).toFixed(1)
         : '0.0';
       console.log(
-        `[SRS Sync] Active=${currentActive.size}, sample="${sampleKey}" ` +
+        `[SRS Sync] Active=${activeStreams.size}, sample="${sampleKey}" ` +
         `${sampleInfo.width}x${sampleInfo.height}@${sampleInfo.fps || 0}fps, ${mbps}Mbps`
       );
     } else {
-      console.log(`[SRS Sync] Active=${currentActive.size}`);
+      console.log(`[SRS Sync] Active=${activeStreams.size}`);
     }
     lastSummaryLogAt = now;
   }
@@ -212,6 +237,7 @@ function stopSrsSync() {
     clearInterval(timer);
     timer = null;
   }
+  stopAllSeiMonitors();
 }
 
 module.exports = { startSrsSync, stopSrsSync, getStreamInfo };

@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { createProxyMiddleware } = require('http-proxy-middleware');
+const { RECORDINGS_ROOTS } = require('./services/historyService');
 
 const authRoutes = require('./routes/auth');
 const cameraRoutes = require('./routes/cameras');
@@ -19,7 +20,7 @@ app.use(express.json());
 // Express mount strips the prefix, causing SRS to receive /xxx.flv instead of /live/xxx.flv.
 app.use(createProxyMiddleware({
   target: 'http://localhost:8080',
-  pathFilter: '/live',
+  pathFilter: (pathname) => pathname.startsWith('/live/') || pathname.startsWith('/history/'),
   changeOrigin: true,
   // Disable proxy timeout for long-lived HTTP-FLV streaming connections
   timeout: 0,
@@ -28,6 +29,9 @@ app.use(createProxyMiddleware({
 
 // Serve Vue frontend static files
 app.use(express.static(path.join(__dirname, '..', 'web', 'dist')));
+RECORDINGS_ROOTS.forEach((root, idx) => {
+  app.use(`/history-files/${idx}`, express.static(root));
+});
 
 // API routes
 app.use('/api/auth', authRoutes);

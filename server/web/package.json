@@ -4,9 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "predev": "node ./scripts/check-platform-deps.mjs",
+    "dev": "node ./node_modules/vite/bin/vite.js",
+    "prebuild": "node ./scripts/check-platform-deps.mjs",
+    "build": "node ./node_modules/vite/bin/vite.js build",
+    "prepreview": "node ./scripts/check-platform-deps.mjs",
+    "preview": "node ./node_modules/vite/bin/vite.js preview"
   },
   "dependencies": {
     "mpegts.js": "^1.7.3",
