@@ -24,6 +24,8 @@ struct EncodedPacket {
     int64_t pts = 0;   // presentation timestamp in microseconds
     int64_t dts = 0;   // decode timestamp in microseconds
     bool isKeyframe = false;
+    int64_t captureTime = 0;  // capture timestamp (steady_clock microseconds since start)
+    int64_t encodeTime = 0;  // encoding duration in microseconds
 
     bool empty() const { return data.empty(); }
 };

@@ -2,10 +2,12 @@ const Camera = require('../models/camera');
 const Session = require('../models/session');
 
 const SRS_API = process.env.SRS_API || 'http://localhost:1985';
-const POLL_INTERVAL = 5000; // 5 seconds
+const POLL_INTERVAL = 1000; // 1 second (reduced from 5s for lower latency)
+const SUMMARY_LOG_INTERVAL = 10000; // 10s summary log to avoid noisy per-poll logs
 
 let io = null;
 let timer = null;
+let lastSummaryLogAt = 0;
 
 // Track which stream keys are currently active (to detect changes)
 const activeStreams = new Set();
@@ -16,13 +18,40 @@ const streamInfoCache = new Map();
 // Track previous frame counts for FPS calculation
 const prevFrameData = new Map();
 
+function estimateFps(videoInfo, prev, currentFrames, nowMs) {
+  const directFps = Number(videoInfo.fps);
+  if (Number.isFinite(directFps) && directFps > 0) {
+    return Math.round(directFps * 10) / 10;
+  }
+
+  if (!prev || nowMs <= prev.time) {
+    return prev?.fps || 0;
+  }
+
+  const timeDelta = (nowMs - prev.time) / 1000;
+  const frameDelta = currentFrames - prev.frames;
+  if (timeDelta < 0.5 || timeDelta > 2.0 || frameDelta < 0 || frameDelta > 120) {
+    return prev.fps || 0;
+  }
+
+  let measuredFps = frameDelta / timeDelta;
+  const prevFps = prev.fps || 0;
+  if (prevFps > 0) {
+    // Limit step changes to avoid poll jitter causing large FPS spikes.
+    const maxStep = Math.max(1, prevFps * 0.12);
+    measuredFps = Math.max(prevFps - maxStep, Math.min(prevFps + maxStep, measuredFps));
+    measuredFps = prevFps * 0.85 + measuredFps * 0.15;
+  }
+
+  return Math.round(measuredFps * 10) / 10;
+}
+
 async function fetchSrsStreams() {
   try {
     const res = await fetch(`${SRS_API}/api/v1/streams/`);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.code !== 0) return null;
-    console.log('[SRS Sync] Fetched', (data.streams || []).length, 'streams from SRS');
     return data.streams || [];
   } catch (err) {
     console.error('[SRS Sync] Failed to fetch streams:', err.message);
@@ -58,19 +87,11 @@ async function syncOnce() {
         kbpsData = { recv_30s: kbpsInfo, send_30s: 0 };
       }
       
-      // Calculate FPS from frame count delta between polls
       const now = Date.now();
       const currentFrames = s.frames || 0;
       const prev = prevFrameData.get(streamKey);
-      let calculatedFps = 0;
-      if (prev && now > prev.time) {
-        const timeDelta = (now - prev.time) / 1000;
-        const frameDelta = currentFrames - prev.frames;
-        if (timeDelta > 0 && frameDelta >= 0) {
-          calculatedFps = Math.round(frameDelta / timeDelta);
-        }
-      }
-      prevFrameData.set(streamKey, { frames: currentFrames, time: now });
+      const calculatedFps = estimateFps(videoInfo, prev, currentFrames, now);
+      prevFrameData.set(streamKey, { frames: currentFrames, time: now, fps: calculatedFps });
 
       const cachedInfo = {
         codec: videoInfo.codec || 'unknown',
@@ -87,13 +108,12 @@ async function syncOnce() {
         recvBytes: s.recv_bytes || s.recvBytes || 0,
         publishActive: s.publish?.active || false,
         publishCid: s.publish?.cid || null,
+        liveMs: s.live_ms || null,
+        serverTime: now,
         lastUpdate: now,
       };
       
       streamInfoCache.set(streamKey, cachedInfo);
-      console.log(`[SRS Sync] Cached stream info for "${streamKey}":`, 
-        `${cachedInfo.width}x${cachedInfo.height}@${cachedInfo.fps}fps, ` +
-        `${(cachedInfo.kbps.recv_30s / 1000).toFixed(1)}Mbps`);
     }
   }
 
@@ -156,6 +176,23 @@ async function syncOnce() {
   activeStreams.clear();
   for (const key of currentActive) {
     activeStreams.add(key);
+  }
+
+  const now = Date.now();
+  if (now - lastSummaryLogAt >= SUMMARY_LOG_INTERVAL) {
+    const [sampleKey, sampleInfo] = streamInfoCache.entries().next().value || [];
+    if (sampleInfo) {
+      const mbps = sampleInfo.kbps?.recv_30s != null
+        ? (sampleInfo.kbps.recv_30s / 1000).toFixed(1)
+        : '0.0';
+      console.log(
+        `[SRS Sync] Active=${currentActive.size}, sample="${sampleKey}" ` +
+        `${sampleInfo.width}x${sampleInfo.height}@${sampleInfo.fps || 0}fps, ${mbps}Mbps`
+      );
+    } else {
+      console.log(`[SRS Sync] Active=${currentActive.size}`);
+    }
+    lastSummaryLogAt = now;
   }
 }
 

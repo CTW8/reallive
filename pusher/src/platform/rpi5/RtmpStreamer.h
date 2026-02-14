@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/IStreamer.h"
+#include <mutex>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -29,9 +30,11 @@ private:
     int audioStreamIdx_ = -1;
     bool connected_ = false;
     bool headerWritten_ = false;
+    bool audioEnabled_ = false;
 
     int64_t videoStartPts_ = -1;
     int64_t audioStartPts_ = -1;
+    std::mutex writeMutex_;
 };
 
 } // namespace reallive

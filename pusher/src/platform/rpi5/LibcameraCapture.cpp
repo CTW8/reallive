@@ -74,7 +74,7 @@ bool LibcameraCapture::open(const CaptureConfig& config) {
     streamConfig.size.width = config.width;
     streamConfig.size.height = config.height;
     streamConfig.pixelFormat = libcamera::formats::NV12;
-    streamConfig.bufferCount = 4;
+    streamConfig.bufferCount = 2;
 
     auto validation = cameraConfig_->validate();
     if (validation == libcamera::CameraConfiguration::Invalid) {

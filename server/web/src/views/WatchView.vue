@@ -41,7 +41,7 @@ onMounted(async () => {
     await calibrateServerTime()
     await loadStreamInfo()
     listenCameraStatus()
-    refreshTimer = setInterval(loadStreamInfo, 3000)
+    refreshTimer = setInterval(loadStreamInfo, 1000)
     // Update latency metrics every 200ms
     latencyTimer = setInterval(updateLatencyMetrics, 200)
   } catch (err) {
@@ -77,16 +77,25 @@ function updateLatencyMetrics() {
     info.buffer = Math.max(0, bufferEnd - video.currentTime)
   }
 
-  // End-to-end latency estimate:
-  // SRS lastUpdate is when the server last saw the stream data.
-  // Compare with current browser time (adjusted for clock offset).
-  if (streamInfo.value?.srs?.lastUpdate) {
-    const serverNow = Date.now() + serverTimeOffset
-    const srsAge = (serverNow - streamInfo.value.srs.lastUpdate) / 1000
-    // e2e = SRS polling delay + buffer latency + SRS processing
-    // srsAge is how old the SRS data is (polling interval ~5s, so not great)
-    // Better: use video.currentTime relative to stream start
-    info.e2e = info.buffer + srsAge
+  // End-to-end latency: calculate from SRS timing data
+  if (streamInfo.value?.srs) {
+    const srs = streamInfo.value.srs
+    const serverNow = Date.now()
+    
+    // Method 1: Use SRS last_frame_time if available (most accurate)
+    if (srs.lastFrameTime) {
+      // lastFrameTime is Unix timestamp in seconds or milliseconds
+      const lastFrameTs = srs.lastFrameTime > 1e12 
+        ? srs.lastFrameTime  // milliseconds
+        : srs.lastFrameTime * 1000  // seconds to milliseconds
+      const frameAge = Math.max(0, (serverNow - lastFrameTs) / 1000)
+      info.e2e = info.buffer + frameAge
+    } 
+    // Method 2: Use server time offset (fallback)
+    else if (srs.publishTime) {
+      const age = (serverNow - srs.publishTime) / 1000
+      info.e2e = info.buffer + age
+    }
   }
 
   // Dropped/decoded frames from browser
@@ -161,8 +170,8 @@ function startFlvPlayer(url) {
     lazyLoadMaxDuration: 0.2,
     deferLoadAfterSourceOpen: false,
     liveBufferLatencyChasing: true,
-    liveBufferLatencyMaxLatency: 0.8,
-    liveBufferLatencyMinRemain: 0.2,
+    liveBufferLatencyMaxLatency: 0.5,
+    liveBufferLatencyMinRemain: 0.1,
     liveBufferLatencyChasingOnPaused: true,
   })
 
@@ -213,6 +222,18 @@ function latencyClass(val) {
   if (val < 1.5) return 'latency-warn'
   return 'latency-bad'
 }
+
+function formatDuration(ms) {
+  if (!ms) return ''
+  const seconds = Math.floor(ms / 1000)
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 </script>
 
 <template>
@@ -251,7 +272,11 @@ function latencyClass(val) {
       <div v-if="streamInfo?.srs && connectionState === 'connected'" class="stream-bar">
         <!-- 延迟指标 (高亮显示) -->
         <span class="bar-item bar-latency" :class="latencyClass(latencyInfo.buffer)">
-          Buffer: {{ latencyInfo.buffer.toFixed(2) }}s
+          Buf: {{ latencyInfo.buffer.toFixed(2) }}s
+        </span>
+        <span class="bar-sep"></span>
+        <span class="bar-item" :class="latencyClass(latencyInfo.e2e)">
+          E2E: {{ latencyInfo.e2e ? latencyInfo.e2e.toFixed(2) + 's' : '-' }}
         </span>
         <span class="bar-sep"></span>
         <span class="bar-item">
@@ -283,6 +308,10 @@ function latencyClass(val) {
         <span class="bar-sep"></span>
         <span class="bar-item">
           {{ streamInfo.srs.clients || 0 }} viewers
+        </span>
+        <span v-if="streamInfo.srs.liveMs" class="bar-sep"></span>
+        <span v-if="streamInfo.srs.liveMs" class="bar-item">
+          {{ formatDuration(streamInfo.srs.liveMs) }}
         </span>
       </div>
     </div>

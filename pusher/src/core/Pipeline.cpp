@@ -65,6 +65,7 @@ bool Pipeline::init(const PusherConfig& config) {
             std::cout << "[Pipeline] Audio opened: " << audio_->getName() << std::endl;
         }
     }
+    config_.stream.enableAudio = config.enableAudio && audio_ != nullptr;
 
     // Pass encoder extradata (SPS/PPS) to the streamer for FLV header
     auto* avEncoder = dynamic_cast<AvcodecEncoder*>(encoder_.get());
@@ -159,13 +160,13 @@ void Pipeline::videoLoop() {
     uint64_t totalProcessTime = 0;
     uint64_t maxProcessTime = 0;
 
-    const auto frameDuration = std::chrono::microseconds(1000000 / config_.camera.fps);
     const auto maxProcessThreshold = std::chrono::microseconds(1000000 / config_.camera.fps * 2); // 允许最大2倍帧间隔
     
     // 统计窗口
     const int statsWindow = config_.camera.fps * 5; // 5秒统计窗口
     std::vector<uint64_t> processTimes;
     processTimes.reserve(statsWindow);
+    uint64_t lastCaptureWait = 0;
 
     while (running_) {
         auto frameStart = Clock::now();
@@ -179,6 +180,7 @@ void Pipeline::videoLoop() {
         // 检查是否超时 - 如果累积延迟过大，选择性丢帧
         auto captureTime = Clock::now();
         auto waitTime = std::chrono::duration_cast<std::chrono::microseconds>(captureTime - frameStart);
+        lastCaptureWait = waitTime.count();
         
         // 2. Draw timestamp overlay on frame before encoding
         TextOverlay::drawTimestamp(frame.data.data(), frame.width, frame.height);
@@ -191,6 +193,10 @@ void Pipeline::videoLoop() {
         if (packet.empty()) {
             continue;
         }
+
+        // Record timing information for latency tracking
+        packet.captureTime = std::chrono::duration_cast<std::chrono::microseconds>(captureTime.time_since_epoch()).count();
+        packet.encodeTime = std::chrono::duration_cast<std::chrono::microseconds>(encodeEnd - encodeStart).count();
 
         // 4. Send the encoded packet
         if (!streamer_->sendVideoPacket(packet)) {
@@ -221,16 +227,6 @@ void Pipeline::videoLoop() {
             processTimes.erase(processTimes.begin());
         }
 
-        // 节奏控制 - 低延迟模式：不强制sleep，让推流尽可能实时
-        // 只有当处理时间小于帧间隔时才sleep一小段时间，避免CPU占用过高
-        if (processTime < frameDuration) {
-            // 只sleep 20%的剩余时间，保持低延迟的同时避免CPU空转
-            auto sleepTime = (frameDuration - processTime) / 5;
-            if (sleepTime.count() > 1000) { // 至少1微秒
-                std::this_thread::sleep_for(sleepTime);
-            }
-        }
-        
         // 如果持续处理慢，记录丢帧
         if (processTime > maxProcessThreshold) {
             droppedFrames++;
@@ -273,6 +269,7 @@ void Pipeline::videoLoop() {
                       << " | Frame: " << framesSent_.load()
                       << " | Bytes: " << (bytesSent_.load() / 1024 / 1024) << " MB"
                       << " | Dropped: " << droppedFrames
+                      << " | CaptureWait: " << lastCaptureWait / 1000 << "ms"
                       << " | Encode: " << encodeTime.count() / 1000 << "ms"
                       << " | AvgProcess: " << avgProcessTime / 1000 << "ms"
                       << " | MaxProcess: " << maxProcessTime / 1000 << "ms"

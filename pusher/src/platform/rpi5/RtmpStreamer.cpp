@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <cstring>
+#include <chrono>
 
 namespace reallive {
 
@@ -30,6 +31,8 @@ bool RtmpStreamer::connect(const StreamConfig& config) {
         std::cerr << "[RtmpStreamer] Failed to allocate output context: " << errbuf << std::endl;
         return false;
     }
+    formatCtx_->max_interleave_delta = 0;
+    formatCtx_->flags |= AVFMT_FLAG_FLUSH_PACKETS;
 
     // Add video stream (H.264)
     AVStream* videoStream = avformat_new_stream(formatCtx_, nullptr);
@@ -57,30 +60,37 @@ bool RtmpStreamer::connect(const StreamConfig& config) {
         videoStream->codecpar->extradata_size = config.videoExtraDataSize;
     }
 
-    // Add audio stream (raw PCM -> will be sent as PCM S16LE in FLV)
-    // FLV supports uncompressed PCM, and the streamer sends raw audio frames
-    AVStream* audioStream = avformat_new_stream(formatCtx_, nullptr);
-    if (!audioStream) {
-        std::cerr << "[RtmpStreamer] Failed to create audio stream" << std::endl;
-        avformat_free_context(formatCtx_);
-        formatCtx_ = nullptr;
-        return false;
+    if (config.enableAudio) {
+        AVStream* audioStream = avformat_new_stream(formatCtx_, nullptr);
+        if (!audioStream) {
+            std::cerr << "[RtmpStreamer] Failed to create audio stream" << std::endl;
+            avformat_free_context(formatCtx_);
+            formatCtx_ = nullptr;
+            return false;
+        }
+        audioStreamIdx_ = audioStream->index;
+        audioStream->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+        audioStream->codecpar->codec_id = AV_CODEC_ID_PCM_S16LE;
+        audioStream->codecpar->sample_rate = 44100;
+        av_channel_layout_default(&audioStream->codecpar->ch_layout, 1);
+        audioStream->codecpar->format = AV_SAMPLE_FMT_S16;
+        audioStream->time_base = {1, 1000};
+    } else {
+        audioStreamIdx_ = -1;
     }
-    audioStreamIdx_ = audioStream->index;
-    audioStream->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
-    audioStream->codecpar->codec_id = AV_CODEC_ID_PCM_S16LE;
-    audioStream->codecpar->sample_rate = 44100;
-    av_channel_layout_default(&audioStream->codecpar->ch_layout, 1);
-    audioStream->codecpar->format = AV_SAMPLE_FMT_S16;
-    audioStream->time_base = {1, 1000};
 
     // Set low-latency options for FLV/RTMP output
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "flvflags", "no_duration_filesize+no_metadata", 0);
+    av_dict_set(&opts, "flush_packets", "1", 0);
     
     // Open RTMP connection with low-latency flags
     if (!(formatCtx_->oformat->flags & AVFMT_NOFILE)) {
-        ret = avio_open(&formatCtx_->pb, url.c_str(), AVIO_FLAG_WRITE);
+        AVDictionary* ioOpts = nullptr;
+        av_dict_set(&ioOpts, "rtmp_live", "live", 0);
+        av_dict_set(&ioOpts, "tcp_nodelay", "1", 0);
+        ret = avio_open2(&formatCtx_->pb, url.c_str(), AVIO_FLAG_WRITE, nullptr, &ioOpts);
+        av_dict_free(&ioOpts);
         if (ret < 0) {
             char errbuf[256];
             av_strerror(ret, errbuf, sizeof(errbuf));
@@ -107,6 +117,7 @@ bool RtmpStreamer::connect(const StreamConfig& config) {
 
     headerWritten_ = true;
     connected_ = true;
+    audioEnabled_ = config.enableAudio;
     videoStartPts_ = -1;
     audioStartPts_ = -1;
 
@@ -117,6 +128,9 @@ bool RtmpStreamer::connect(const StreamConfig& config) {
 bool RtmpStreamer::sendVideoPacket(const EncodedPacket& packet) {
     if (!connected_ || !formatCtx_ || !headerWritten_) return false;
     if (videoStreamIdx_ < 0) return false;
+    std::lock_guard<std::mutex> lock(writeMutex_);
+
+    auto sendStart = std::chrono::steady_clock::now();
 
     AVPacket* avpkt = av_packet_alloc();
     if (!avpkt) return false;
@@ -148,6 +162,24 @@ bool RtmpStreamer::sendVideoPacket(const EncodedPacket& packet) {
     int ret = av_interleaved_write_frame(formatCtx_, avpkt);
     av_packet_free(&avpkt);
 
+    auto sendEnd = std::chrono::steady_clock::now();
+    auto sendTime = std::chrono::duration_cast<std::chrono::microseconds>(sendEnd - sendStart);
+
+    static uint64_t sendCount = 0;
+    static uint64_t totalSendTime = 0;
+    sendCount++;
+    totalSendTime += sendTime.count();
+    
+    // Log every 30 frames (approx 1 second at 30fps)
+    if (sendCount % 30 == 0) {
+        std::cout << "[RTMP Send] Avg: " << (totalSendTime / sendCount / 1000.0) << "ms, "
+                  << "Last: " << (sendTime.count() / 1000.0) << "ms, "
+                  << "Size: " << packet.data.size() << "B"
+                  << (packet.isKeyframe ? " [KEY]" : "") << std::endl;
+        totalSendTime = 0;
+        sendCount = 0;
+    }
+
     if (ret < 0) {
         char errbuf[256];
         av_strerror(ret, errbuf, sizeof(errbuf));
@@ -160,8 +192,10 @@ bool RtmpStreamer::sendVideoPacket(const EncodedPacket& packet) {
 }
 
 bool RtmpStreamer::sendAudioPacket(const AudioFrame& frame) {
+    if (!audioEnabled_) return true;
     if (!connected_ || !formatCtx_ || !headerWritten_) return false;
     if (audioStreamIdx_ < 0) return false;
+    std::lock_guard<std::mutex> lock(writeMutex_);
 
     AVPacket* avpkt = av_packet_alloc();
     if (!avpkt) return false;
@@ -212,6 +246,7 @@ void RtmpStreamer::disconnect() {
     }
 
     connected_ = false;
+    audioEnabled_ = false;
     videoStreamIdx_ = -1;
     audioStreamIdx_ = -1;
 }

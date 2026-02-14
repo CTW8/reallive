@@ -10,6 +10,7 @@ namespace reallive {
 struct StreamConfig {
     std::string url;        // e.g. "rtmp://localhost:1935/live"
     std::string streamKey;
+    bool enableAudio = false;
     int connectTimeoutMs = 5000;
     int writeTimeoutMs = 3000;
 
