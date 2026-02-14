@@ -17,9 +17,13 @@ if (!requiredPkgs) {
 const missing = []
 for (const pkg of requiredPkgs) {
   try {
-    require.resolve(pkg)
+    require.resolve(`${pkg}/package.json`)
   } catch {
-    missing.push(pkg)
+    try {
+      require.resolve(pkg)
+    } catch {
+      missing.push(pkg)
+    }
   }
 }
 

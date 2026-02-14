@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
 import { cameraApi } from '../api/index.js'
@@ -32,6 +32,9 @@ const historyError = ref('')
 const nowMs = ref(Date.now())
 const historyReplaySessionId = ref(null)
 const historyReplayTransport = ref('')
+const timelineZoomPct = ref(35)
+const timelineZoomAnchorMs = ref(null)
+const telemetryChartRef = ref(null)
 
 const videoRef = ref(null)
 let player = null
@@ -39,6 +42,10 @@ let socket = null
 let refreshTimer = null
 let latencyTimer = null
 let historyRefreshTimer = null
+let telemetryChartInstance = null
+let timelineZoomTimer = null
+let echartsCore = null
+let echartsLoadPromise = null
 const blackThumbUrlCache = new Set()
 const normalThumbUrlCache = new Set()
 const blockedThumbUrls = ref({})
@@ -208,6 +215,20 @@ const timelineLabel = computed(() => {
   return formatDateTime(selectedTimelineMs.value)
 })
 
+const timelineWindowMs = computed(() => {
+  const minWindowMs = 2 * 60 * 1000
+  const maxWindowMs = 6 * 3600 * 1000
+  const t = Math.max(0, Math.min(100, Number(timelineZoomPct.value))) / 100
+  return Math.round(maxWindowMs * Math.pow(minWindowMs / maxWindowMs, t))
+})
+
+const timelineWindowLabel = computed(() => formatDuration(timelineWindowMs.value))
+
+const timelineSliderStepMs = computed(() => {
+  const span = Math.max(1, timelineMaxMs.value - timelineMinMs.value)
+  return Math.max(200, Math.round(span / 360))
+})
+
 const historyStatusLabel = computed(() => {
   if (!hasHistory.value) return 'No history'
   if (historyLoading.value) return 'Loading...'
@@ -215,29 +236,7 @@ const historyStatusLabel = computed(() => {
   return 'History'
 })
 
-const telemetryChart = computed(() => {
-  const rawPoints = telemetryPoints.value
-  if (!rawPoints.length) {
-    return { cpu: '', memory: '', storage: '', points: 0 }
-  }
-  const points = rawPoints.length === 1 ? [rawPoints[0], rawPoints[0]] : rawPoints
-  const maxIndex = Math.max(points.length - 1, 1)
-  const buildLine = (key) => points
-    .map((point, i) => {
-      const x = (i / maxIndex) * 100
-      const raw = Number(point[key])
-      const value = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0
-      const y = 100 - value
-      return `${x.toFixed(2)},${y.toFixed(2)}`
-    })
-    .join(' ')
-  return {
-    cpu: buildLine('cpuPct'),
-    memory: buildLine('memoryPct'),
-    storage: buildLine('storagePct'),
-    points: rawPoints.length,
-  }
-})
+const hasTelemetryData = computed(() => telemetryPoints.value.length > 0)
 
 const cameraConfigItems = computed(() => {
   const camera = cameraSeiConfig.value || null
@@ -275,6 +274,140 @@ const configurableItems = computed(() => {
   ]
 })
 
+function formatTelemetryAxisTime(ts) {
+  const n = Number(ts)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return new Date(n).toLocaleTimeString([], { hour12: false, minute: '2-digit', second: '2-digit' })
+}
+
+function toPct(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.min(100, n))
+}
+
+async function ensureEchartsLoaded() {
+  if (echartsCore) return echartsCore
+  if (!echartsLoadPromise) {
+    echartsLoadPromise = Promise.all([
+      import('echarts/core'),
+      import('echarts/charts'),
+      import('echarts/components'),
+      import('echarts/renderers'),
+    ]).then(([core, charts, components, renderers]) => {
+      core.use([
+        charts.LineChart,
+        components.GridComponent,
+        components.TooltipComponent,
+        renderers.CanvasRenderer,
+      ])
+      echartsCore = core
+      return echartsCore
+    })
+  }
+  return echartsLoadPromise
+}
+
+async function initTelemetryChart() {
+  if (!telemetryChartRef.value) return
+  if (telemetryChartInstance) return
+  const ec = await ensureEchartsLoaded()
+  telemetryChartInstance = ec.init(telemetryChartRef.value)
+}
+
+function resizeTelemetryChart() {
+  if (telemetryChartInstance) {
+    telemetryChartInstance.resize()
+  }
+}
+
+async function updateTelemetryChart() {
+  if (!hasTelemetryData.value) {
+    if (telemetryChartInstance) telemetryChartInstance.clear()
+    return
+  }
+
+  await initTelemetryChart()
+  if (!telemetryChartInstance) return
+
+  const points = telemetryPoints.value
+  const xData = points.map((p) => Number(p.ts) || Date.now())
+  const cpuData = points.map((p) => toPct(p.cpuPct))
+  const memData = points.map((p) => toPct(p.memoryPct))
+  const storageData = points.map((p) => toPct(p.storagePct))
+
+  telemetryChartInstance.setOption({
+    animation: false,
+    grid: { left: 44, right: 14, top: 16, bottom: 28 },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(17, 24, 39, 0.92)',
+      borderColor: 'rgba(148, 163, 184, 0.35)',
+      borderWidth: 1,
+      textStyle: { color: '#e5e7eb' },
+      valueFormatter: (v) => `${Number(v).toFixed(1)}%`,
+      axisPointer: { type: 'line', lineStyle: { color: 'rgba(148, 163, 184, 0.6)', width: 1 } },
+    },
+    legend: { show: false },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: xData,
+      axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
+      axisTick: { show: false },
+      axisLabel: {
+        color: 'rgba(203, 213, 225, 0.86)',
+        fontSize: 11,
+        formatter: (v) => formatTelemetryAxisTime(v),
+      },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      max: 100,
+      interval: 20,
+      axisLine: { show: true, lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
+      axisTick: { show: false },
+      axisLabel: {
+        color: 'rgba(203, 213, 225, 0.86)',
+        fontSize: 11,
+        formatter: '{value}%',
+      },
+      splitLine: {
+        show: true,
+        lineStyle: { color: 'rgba(148, 163, 184, 0.16)', width: 1 },
+      },
+    },
+    series: [
+      {
+        name: 'CPU',
+        type: 'line',
+        data: cpuData,
+        showSymbol: false,
+        smooth: 0.22,
+        lineStyle: { width: 1.25, color: '#f87171' },
+      },
+      {
+        name: 'MEM',
+        type: 'line',
+        data: memData,
+        showSymbol: false,
+        smooth: 0.22,
+        lineStyle: { width: 1.25, color: '#60a5fa' },
+      },
+      {
+        name: 'DISK',
+        type: 'line',
+        data: storageData,
+        showSymbol: false,
+        smooth: 0.22,
+        lineStyle: { width: 1.25, color: '#34d399' },
+      },
+    ],
+  }, true)
+}
+
 onMounted(async () => {
   try {
     await calibrateServerTime()
@@ -285,6 +418,9 @@ onMounted(async () => {
     refreshTimer = setInterval(loadStreamInfo, 1000)
     latencyTimer = setInterval(updateLatencyMetrics, 200)
     historyRefreshTimer = setInterval(() => refreshHistoryData(false), 10000)
+    window.addEventListener('resize', resizeTelemetryChart)
+    await nextTick()
+    await updateTelemetryChart()
   } catch (err) {
     error.value = err.message || 'Failed to load stream info'
     connectionState.value = 'error'
@@ -293,6 +429,31 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   cleanup()
+})
+
+watch(telemetryPoints, () => {
+  nextTick().then(() => updateTelemetryChart()).catch(() => {})
+}, { deep: true })
+
+watch(timelineZoomPct, () => {
+  if (!historyOverview.value?.hasHistory) return
+  if (timelineZoomTimer) {
+    clearTimeout(timelineZoomTimer)
+  }
+  timelineZoomTimer = setTimeout(() => {
+    timelineZoomTimer = null
+    const anchorMs = timelineZoomAnchorMs.value ?? selectedTimelineMs.value
+    timelineZoomAnchorMs.value = null
+    void loadTimelineWindow(anchorMs, true)
+  }, 120)
+})
+
+watch(isLiveMode, (liveMode) => {
+  if (!historyOverview.value?.hasHistory || !historyOverview.value.timeRange) return
+  const center = liveMode
+    ? historyOverview.value.timeRange.endMs
+    : selectedTimelineMs.value
+  void loadTimelineWindow(center, true)
 })
 
 async function calibrateServerTime() {
@@ -306,6 +467,15 @@ function cleanup() {
   void stopHistoryReplaySession()
   stopLivePlayer()
   clearHistoryVideo()
+  if (timelineZoomTimer) {
+    clearTimeout(timelineZoomTimer)
+    timelineZoomTimer = null
+  }
+  window.removeEventListener('resize', resizeTelemetryChart)
+  if (telemetryChartInstance) {
+    telemetryChartInstance.dispose()
+    telemetryChartInstance = null
+  }
   if (socket) {
     socket.off('camera-status')
   }
@@ -376,31 +546,14 @@ async function refreshHistoryData(forceTimeline) {
       return
     }
 
-    let startMs = historyTimeline.value.startMs
-    let endMs = historyTimeline.value.endMs
-    if (forceTimeline || startMs == null || endMs == null) {
-      endMs = overview.timeRange.endMs
-      startMs = Math.max(overview.timeRange.startMs, endMs - 6 * 3600 * 1000)
-    } else {
-      const windowSpan = Math.max(60 * 1000, endMs - startMs)
-      if (isLiveMode.value) {
-        endMs = overview.timeRange.endMs
-        startMs = Math.max(overview.timeRange.startMs, endMs - windowSpan)
-      } else {
-        startMs = Math.max(overview.timeRange.startMs, startMs)
-        endMs = Math.min(overview.timeRange.endMs, endMs)
-      }
-      if (endMs == null || startMs == null || endMs <= startMs) {
-        endMs = overview.timeRange.endMs
-        startMs = Math.max(overview.timeRange.startMs, endMs - 6 * 3600 * 1000)
-      }
-    }
+    const centerMs = isLiveMode.value
+      ? overview.timeRange.endMs
+      : (timelineDragMs.value ?? historySelectedMs.value ?? overview.timeRange.endMs)
 
-    const timeline = await cameraApi.getHistoryTimeline(cameraId, { start: startMs, end: endMs })
-    historyTimeline.value = timeline
+    await loadTimelineWindow(centerMs, forceTimeline)
 
     if (historySelectedMs.value == null || isLiveMode.value) {
-      historySelectedMs.value = Math.min(nowMs.value, timeline.endMs || overview.timeRange.endMs)
+      historySelectedMs.value = Math.min(nowMs.value, historyTimeline.value.endMs || overview.timeRange.endMs)
     }
   } catch (err) {
     console.error('Failed to refresh history:', err)
@@ -541,6 +694,85 @@ async function seekHistoryAt(tsMs) {
   }
 }
 
+function clampTimelineTs(ts, startMs, endMs) {
+  if (!Number.isFinite(ts)) return endMs
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return ts
+  return Math.max(startMs, Math.min(endMs, ts))
+}
+
+function computeTimelineWindowRange(centerMs, rangeStartMs, rangeEndMs) {
+  const safeStart = Number(rangeStartMs)
+  const safeEnd = Number(rangeEndMs)
+  if (!Number.isFinite(safeStart) || !Number.isFinite(safeEnd) || safeEnd <= safeStart) {
+    return { startMs: safeStart, endMs: safeEnd }
+  }
+
+  const fullSpan = safeEnd - safeStart
+  const windowMs = Math.max(60 * 1000, Math.min(fullSpan, timelineWindowMs.value))
+  const safeCenter = clampTimelineTs(centerMs, safeStart, safeEnd)
+  let startMs = Math.round(safeCenter - windowMs / 2)
+  let endMs = startMs + windowMs
+
+  if (startMs < safeStart) {
+    startMs = safeStart
+    endMs = Math.min(safeEnd, safeStart + windowMs)
+  }
+  if (endMs > safeEnd) {
+    endMs = safeEnd
+    startMs = Math.max(safeStart, safeEnd - windowMs)
+  }
+  if (endMs <= startMs) {
+    startMs = safeStart
+    endMs = safeEnd
+  }
+  return { startMs, endMs }
+}
+
+async function loadTimelineWindow(centerMs, force = false) {
+  const overview = historyOverview.value
+  if (!overview?.hasHistory || !overview.timeRange) return
+
+  const { startMs, endMs } = computeTimelineWindowRange(
+    centerMs,
+    overview.timeRange.startMs,
+    overview.timeRange.endMs
+  )
+
+  const currentStart = Number(historyTimeline.value.startMs)
+  const currentEnd = Number(historyTimeline.value.endMs)
+  if (!force &&
+      Number.isFinite(currentStart) &&
+      Number.isFinite(currentEnd) &&
+      Math.abs(currentStart - startMs) < 1000 &&
+      Math.abs(currentEnd - endMs) < 1000) {
+    return
+  }
+
+  const timeline = await cameraApi.getHistoryTimeline(cameraId, { start: startMs, end: endMs })
+  historyTimeline.value = timeline
+}
+
+function adjustTimelineZoom(deltaPct, anchorMs = null) {
+  if (anchorMs != null && Number.isFinite(Number(anchorMs))) {
+    timelineZoomAnchorMs.value = Number(anchorMs)
+  }
+  const next = Math.max(0, Math.min(100, Number(timelineZoomPct.value) + Number(deltaPct)))
+  timelineZoomPct.value = next
+}
+
+function onTimelineWheel(event) {
+  if (!hasHistory.value) return
+  const rect = event.currentTarget?.getBoundingClientRect?.()
+  let anchorMs = selectedTimelineMs.value
+  if (rect && Number.isFinite(rect.width) && rect.width > 0) {
+    const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left))
+    const ratio = x / rect.width
+    anchorMs = timelineMinMs.value + ratio * Math.max(1, timelineMaxMs.value - timelineMinMs.value)
+  }
+  const step = event.deltaY < 0 ? 5 : -5
+  adjustTimelineZoom(step, anchorMs)
+}
+
 function returnToLive() {
   void stopHistoryReplaySession()
   playbackMode.value = 'live'
@@ -561,6 +793,7 @@ function onTimelineChange(event) {
   const tsMs = Number(event.target.value)
   timelineDragMs.value = null
   historySelectedMs.value = tsMs
+  void loadTimelineWindow(tsMs)
   seekHistoryAt(tsMs)
 }
 
@@ -830,6 +1063,20 @@ function formatUpdatedTime(ts) {
           <h3>Timeline</h3>
           <p class="timeline-sub">{{ historyStatusLabel }} | {{ timelineLabel }}</p>
         </div>
+        <div class="timeline-zoom">
+          <span class="timeline-zoom-label">Window {{ timelineWindowLabel }}</span>
+          <button class="btn btn-secondary btn-sm" type="button" :disabled="!hasHistory" @click="adjustTimelineZoom(-10)">-</button>
+          <input
+            v-model.number="timelineZoomPct"
+            class="timeline-zoom-slider"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            :disabled="!hasHistory"
+          />
+          <button class="btn btn-secondary btn-sm" type="button" :disabled="!hasHistory" @click="adjustTimelineZoom(10)">+</button>
+        </div>
         <div class="timeline-actions">
           <button class="btn btn-secondary btn-sm" :disabled="!hasHistory || historyLoading" @click="seekHistoryAt(selectedTimelineMs)">
             View At Cursor
@@ -841,7 +1088,7 @@ function formatUpdatedTime(ts) {
       </div>
 
       <template v-if="hasHistory">
-        <div class="timeline-track-wrap">
+        <div class="timeline-track-wrap" title="滚轮缩放时间轴" @wheel.prevent="onTimelineWheel">
           <div class="timeline-filmstrip">
             <div
               v-for="tile in timelineThumbTiles"
@@ -866,7 +1113,7 @@ function formatUpdatedTime(ts) {
             type="range"
             :min="timelineMinMs"
             :max="timelineMaxMs"
-            :step="1000"
+            :step="timelineSliderStepMs"
             :value="selectedTimelineMs"
             @input="onTimelineInput"
             @change="onTimelineChange"
@@ -907,15 +1154,8 @@ function formatUpdatedTime(ts) {
           <h3>Device Resource Usage (SEI)</h3>
           <span class="watch-card-meta">{{ telemetryStateLabel }} | Updated {{ formatUpdatedTime(telemetryUpdatedAt) }}</span>
         </div>
-        <div v-if="telemetryChart.points > 0" class="telemetry-chart-wrap">
-          <svg class="telemetry-chart" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <line x1="0" y1="25" x2="100" y2="25" class="chart-grid" />
-            <line x1="0" y1="50" x2="100" y2="50" class="chart-grid" />
-            <line x1="0" y1="75" x2="100" y2="75" class="chart-grid" />
-            <polyline :points="telemetryChart.cpu" class="chart-line chart-cpu" />
-            <polyline :points="telemetryChart.memory" class="chart-line chart-memory" />
-            <polyline :points="telemetryChart.storage" class="chart-line chart-storage" />
-          </svg>
+        <div v-if="hasTelemetryData" class="telemetry-chart-wrap">
+          <div ref="telemetryChartRef" class="telemetry-chart"></div>
           <div class="telemetry-legend">
             <span class="legend-item"><i class="legend-dot legend-cpu"></i>CPU {{ formatOptionalNumber(telemetryInfo?.cpuPct, 1) }}%</span>
             <span class="legend-item"><i class="legend-dot legend-memory"></i>MEM {{ formatOptionalNumber(telemetryInfo?.memoryPct, 1) }}%</span>
@@ -1124,9 +1364,9 @@ function formatUpdatedTime(ts) {
 
 .timeline-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .timeline-header h3 {
@@ -1140,9 +1380,26 @@ function formatUpdatedTime(ts) {
   font-size: 0.8rem;
 }
 
+.timeline-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-zoom-label {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  min-width: 88px;
+}
+
+.timeline-zoom-slider {
+  width: 160px;
+}
+
 .timeline-actions {
   display: flex;
   gap: 8px;
+  margin-left: auto;
 }
 
 .timeline-track-wrap {
@@ -1331,33 +1588,9 @@ function formatUpdatedTime(ts) {
 .telemetry-chart {
   width: 100%;
   height: 190px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.12));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(0, 0, 0, 0.14));
   border: 1px solid var(--border-color);
   border-radius: 8px;
-}
-
-.chart-grid {
-  stroke: rgba(255, 255, 255, 0.12);
-  stroke-width: 0.35;
-}
-
-.chart-line {
-  fill: none;
-  stroke-width: 1.7;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-
-.chart-cpu {
-  stroke: #f87171;
-}
-
-.chart-memory {
-  stroke: #60a5fa;
-}
-
-.chart-storage {
-  stroke: #34d399;
 }
 
 .telemetry-legend {
@@ -1459,8 +1692,22 @@ function formatUpdatedTime(ts) {
     align-items: flex-start;
   }
 
+  .timeline-zoom {
+    width: 100%;
+  }
+
+  .timeline-zoom-label {
+    min-width: 78px;
+  }
+
+  .timeline-zoom-slider {
+    flex: 1;
+    width: auto;
+  }
+
   .timeline-actions {
     width: 100%;
+    margin-left: 0;
   }
 
   .timeline-actions .btn {
