@@ -4,48 +4,90 @@ Real-time video surveillance system with live streaming support.
 
 ## Components
 
-- **Server** - Node.js backend with Express.js, SQLite, and Vue 3 frontend
-- **Pusher** - C++ stream publisher (camera capture + H.264 encoding + RTMP push)
-- **Puller** - C++ stream receiver (HTTP-FLV receive + decoding + MP4 storage)
-- **SRS** - Media server for RTMP ingest and HTTP-FLV output
+### Primary path
+
+- **Pusher** - C++ edge process (camera capture + encoding + RTMP push + local recording + detection)
+- **SRS** - Media server (RTMP ingest + HTTP-FLV output)
+- **Server** - Node.js backend (API/signaling/history aggregation/live-demand control) + Vue Web UI
+- **Android** - Native client (Kotlin + JNI + C++ HTTP-FLV player)
+
+### Optional/Auxiliary
+
+- **Puller** - C++ HTTP-FLV ingest/storage module for auxiliary recording experiments
 
 ## Architecture
 
 ```
 Pusher --RTMP--> SRS --HTTP-FLV--> Web UI (mpegts.js)
-                     --HTTP-FLV--> Puller (FFmpeg -> MP4)
+                     --HTTP-FLV--> Android (native player)
+                     --HTTP-FLV--> Puller (optional, FFmpeg -> MP4)
 ```
 
 The system uses RTMP for stream publishing and HTTP-FLV for playback. SRS media server handles protocol conversion. See [docs/architecture.md](docs/architecture.md) for the full architecture design.
+
+Runtime state naming note:
+
+- Server internal/API often uses `desiredLive` / `activeLive`
+- MQTT/control payload uses `desired_live` / `active_live`
+- They represent the same semantics (`desired` target vs `active` actual)
+
+## Documentation
+
+- Architecture (code-aligned): [docs/architecture.md](docs/architecture.md)
+- System understanding snapshot: [docs/system-understanding.md](docs/system-understanding.md)
+- Build/deploy/run manual: [docs/manual.md](docs/manual.md)
+- Test plan: [docs/test-plan.md](docs/test-plan.md)
 
 ## Current Platform
 
 - Server: Any platform with Node.js
 - SRS: Linux (Docker or source build)
-- Pusher: Raspberry Pi 5 + CSI Camera (libcamera + V4L2 M2M H.264)
-- Puller: Raspberry Pi 5 (FFmpeg + V4L2 hardware decode + MP4 storage)
+- Pusher: Raspberry Pi 5 + CSI Camera (libcamera + FFmpeg encoder + MQTT runtime control)
+- Android: Android 8+ (SDK 34/NDK r26+ for native module build)
+- Puller: Raspberry Pi 5 (optional auxiliary module for HTTP-FLV ingest/storage experiments)
 
 ## Quick Start
 
-### SRS Media Server
+### 1. MQTT Broker
 
 ```bash
-docker run -d --name srs \
-  -p 1935:1935 -p 80:80 \
-  ossrs/srs:5
+sudo apt install -y mosquitto
+sudo systemctl enable --now mosquitto
 ```
 
-### Server
+### 2. SRS Media Server
+
+Use repository SRS config (`server/srs.conf`):
+Run this from repository root.
+
+```bash
+docker run -d --name srs --restart unless-stopped \
+  -p 1935:1935 -p 8080:8080 -p 1985:1985 \
+  -v "$(pwd)/server/srs.conf:/usr/local/srs/conf/srs.conf" \
+  ossrs/srs:5 ./objs/srs -c conf/srs.conf
+```
+
+### 3. Server
 
 配置文件：`server/config/server.json`
 
 ```json
 {
   "port": 80,
+  "dbPath": "./data/reallive.db",
   "srsApi": "http://localhost:1985",
   "edgeReplay": {
     "url": "http://127.0.0.1:8090",
     "timeoutMs": 1500
+  },
+  "mqttControl": {
+    "enabled": true,
+    "brokerUrl": "mqtt://127.0.0.1:1883",
+    "topicPrefix": "reallive/device",
+    "commandQos": 1,
+    "stateQos": 0,
+    "commandRetain": true,
+    "stateStaleMs": 12000
   }
 }
 ```
@@ -56,31 +98,54 @@ npm install
 npm run dev
 ```
 
-### Pusher (Raspberry Pi 5)
+If `port` is `80`, Linux may require elevated privilege or capability.
+
+### 4. Pusher (Raspberry Pi 5)
 
 ```bash
 cd pusher
 mkdir build && cd build
 cmake ..
 make
-./reallive-pusher
+./reallive-pusher -c ../config/pusher.json
 ```
 
-### Puller (Raspberry Pi 5)
+### 5. Puller (optional)
 
 ```bash
 cd puller
 mkdir build && cd build
 cmake ..
 make
-./reallive-puller
+./reallive-puller -c ../config/puller.json
 ```
+
+### 6. Verify
+
+```bash
+# SRS API
+curl -s http://127.0.0.1:1985/api/v1/versions
+curl -s http://127.0.0.1:1985/api/v1/streams
+
+# Server health
+curl -s http://127.0.0.1:80/api/health
+```
+
+Web UI:
+
+- Open `http://127.0.0.1:80/`
+
+Android:
+
+- Open `android/` in Android Studio
+- See `android/README.md` for native player build details
 
 ## Project Structure
 
 ```
 reallive/
 ├── docs/           # Documentation
+├── android/        # Android app + native player module
 ├── server/         # Node.js server + Vue frontend
 ├── pusher/         # C++ stream pusher
 ├── puller/         # C++ stream puller

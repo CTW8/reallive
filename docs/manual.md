@@ -1,566 +1,444 @@
-# RealLive 编译、部署与运行手册
+# RealLive 编译、部署与运行手册（当前实现）
 
-## 1. 系统架构概览
+更新时间：2026-02-15
 
-```
-+------------------+       RTMP        +------------------+    HTTP-FLV     +------------------+
-|   Pusher (C++)   | ----------------> |   SRS            | -------------> |   Puller (C++)   |
-|   Raspberry Pi 5 |   推流 (1935)     |   媒体服务器      |   拉流 (80)    |   本地存储 MP4   |
-|   CSI Camera     |                   +------------------+                +------------------+
-+------------------+                          |
-                                              | HTTP-FLV
-                                              v
-                               +-----------------------------+
-                               |   Server (Node.js:3000)     |
-                               |   + Vue 3 Web UI            |
-                               |   用户管理 / 摄像头管理      |
-                               |   前端播放 HTTP-FLV 流       |
-                               +-----------------------------+
-```
+相关文档：
 
-**数据流向：**
-- Pusher 通过 RTMP 协议将 H.264 视频推送到 SRS 媒体服务器
-- Puller 通过 HTTP-FLV 从 SRS 拉取视频流，存储为 MP4 分段文件
-- Web UI 通过 HTTP-FLV 在浏览器中观看实时视频
-- Server 提供用户认证、摄像头管理 REST API 和 WebSocket 信令
+- 架构：`architecture.md`
+- 当前实现快照：`system-understanding.md`
+- 测试计划：`test-plan.md`
 
-## 2. 环境要求
+## 1. 适用范围
 
-### 2.1 硬件
+本文档面向当前仓库实现，覆盖：
 
-| 组件 | 硬件要求 |
-|------|---------|
-| Pusher | Raspberry Pi 5 (8GB RAM) + CSI 摄像头 (IMX219/IMX477) |
-| Puller | Raspberry Pi 5 (或任何 Linux aarch64 主机) |
-| Server + SRS | 任意 Linux 主机 (可与 Puller 同一台机器) |
+- `server`（Node.js API + Web UI + signaling）
+- `pusher`（Raspberry Pi 推流/检测/录制/MQTT 控制）
+- `SRS`（RTMP ingest + HTTP-FLV output）
+- `android`（原生 HTTP-FLV 播放原型）
+- `puller`（辅助模块，非当前主回看链路）
 
-### 2.2 软件依赖
+## 2. 当前链路摘要
 
-**所有机器通用：**
+- 实时：`pusher -> RTMP -> SRS -> HTTP-FLV -> server 代理 -> Web/Android`
+- 历史：`pusher 本地录制(mp4+jpg+events.ndjson) -> server/historyService -> watch 时间轴`
+- 控制：`watch 会话 -> liveDemandService -> mqttControlService -> pusher MqttRuntimeClient`
+
+## 3. 端口与协议
+
+| 模块 | 端口 | 协议 | 用途 |
+| --- | --- | --- | --- |
+| SRS | 1935 | RTMP | 接收 pusher 推流 |
+| SRS | 8080 | HTTP | 输出 live/history FLV |
+| SRS | 1985 | HTTP API | 流状态查询 |
+| Server | 80（默认配置） | HTTP/WS | REST API + Web UI + `/ws/signaling` |
+| MQTT Broker | 1883 | MQTT | 下发 live 开关命令，回收设备状态 |
+| Pusher ControlServer（可选） | 8090 | HTTP | 设备本地回放/运行时控制接口 |
+
+说明：
+
+- 当前建议 server 使用 `server/config/server.json` 配置，不依赖启动命令行环境变量。
+- server 会把 `/live/*` 和 `/history/*` 反向代理到 `http://localhost:8080`（SRS）。
+
+## 4. 依赖安装
+
+## 4.1 Server 节点
+
 ```bash
-sudo apt update && sudo apt upgrade -y
+sudo apt update
+sudo apt install -y nodejs npm
 ```
 
-**Server + SRS 节点：**
-```bash
-# Node.js 18 LTS 或 20 LTS
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -
-sudo apt install -y nodejs
+## 4.2 Pusher 节点（Raspberry Pi 5）
 
-# SRS 依赖（从源码编译时需要）
-sudo apt install -y git build-essential autoconf automake libtool pkg-config unzip
-```
-
-**Pusher 节点 (Raspberry Pi 5)：**
 ```bash
+sudo apt update
 sudo apt install -y \
-    build-essential cmake pkg-config \
-    libcamera-dev \
-    libavformat-dev libavcodec-dev libavutil-dev \
-    libasound2-dev
+  build-essential cmake pkg-config \
+  libcamera-dev \
+  libavformat-dev libavcodec-dev libavutil-dev \
+  libasound2-dev \
+  libopencv-core-dev libopencv-imgproc-dev \
+  libmosquitto-dev
 ```
 
-**Puller 节点 (Raspberry Pi 5)：**
+可选（启用 TFLite）：
+
 ```bash
-sudo apt install -y \
-    build-essential cmake pkg-config \
-    libavformat-dev libavcodec-dev libavutil-dev
+sudo apt install -y libtensorflow-lite-dev
 ```
 
-**C++ 单元测试（可选）：**
+## 4.3 MQTT Broker
+
 ```bash
-sudo apt install -y libgtest-dev nlohmann-json3-dev
+sudo apt update
+sudo apt install -y mosquitto
+sudo systemctl enable --now mosquitto
+sudo systemctl status mosquitto
 ```
 
-## 3. 编译
+## 5. 配置文件
 
-### 3.1 SRS 媒体服务器
+## 5.1 Server 配置：`server/config/server.json`
 
-```bash
-cd /opt
-sudo git clone -b 5.0release https://github.com/ossrs/srs.git
-cd srs/trunk
-sudo ./configure
-sudo make -j$(nproc)
+当前关键字段：
+
+- `port`: server HTTP 端口
+- `srsApi`: SRS API 地址（默认 `http://localhost:1985`）
+- `edgeReplay`: 可选 edge 回放适配
+- `mqttControl`: server 控制设备开关流配置
+
+示例（与当前代码兼容）：
+
+```json
+{
+  "port": 80,
+  "dbPath": "./data/reallive.db",
+  "srsApi": "http://localhost:1985",
+  "edgeReplay": {
+    "url": "http://127.0.0.1:8090",
+    "timeoutMs": 1500
+  },
+  "mqttControl": {
+    "enabled": true,
+    "brokerUrl": "mqtt://127.0.0.1:1883",
+    "topicPrefix": "reallive/device",
+    "commandQos": 1,
+    "stateQos": 0,
+    "commandRetain": true,
+    "stateStaleMs": 12000
+  }
+}
 ```
 
-编译成功后可执行文件位于 `/opt/srs/trunk/objs/srs`。
+## 5.2 Pusher 配置：`pusher/config/pusher.json`
 
-> **提示：** 也可以使用 Docker 部署 SRS，参见 [4.1 节](#41-srs-媒体服务器配置)。
+当前关键字段：
 
-### 3.2 Server (Node.js)
+- 推流：`url`, `stream_key`, `width`, `height`, `fps`, `bitrate`, `gop`
+- 本地录制：`enable_record`, `record_output_dir`, `record_segment_seconds`
+- 存储清理：`record_min_free_percent`, `record_target_free_percent`
+- 本地控制：`control_enable`, `control_port`, `replay_rtmp_base`
+- MQTT：`mqtt_enable`, `mqtt_host`, `mqtt_port`, `mqtt_topic_prefix`
+- 检测：`detect_*`, `detect_tflite_model`
+
+示例（节选）：
+
+```json
+{
+  "url": "rtmp://localhost:1935/live",
+  "stream_key": "598c05a2-8386-4dac-8711-2ec9a9b3b2f7",
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "gop": 15,
+  "bitrate": 2000000,
+
+  "enable_record": true,
+  "record_output_dir": "./recordings",
+  "record_segment_seconds": 60,
+  "record_min_free_percent": 15,
+  "record_target_free_percent": 20,
+  "record_thumbnail": true,
+
+  "control_enable": true,
+  "control_host": "0.0.0.0",
+  "control_port": 8090,
+  "replay_rtmp_base": "rtmp://localhost:1935/history",
+
+  "mqtt_enable": true,
+  "mqtt_host": "127.0.0.1",
+  "mqtt_port": 1883,
+  "mqtt_topic_prefix": "reallive/device",
+
+  "detect_enable": true,
+  "detect_draw_overlay": true,
+  "detect_tflite_enable": true,
+  "detect_tflite_model": "/path/to/reallive/model/yolov8n_float16.tflite"
+}
+```
+
+## 5.3 SRS 配置：`server/srs.conf`
+
+当前仓库配置特征：
+
+- 低延迟参数已开启（`min_latency on`, `gop_cache off`）
+- HTTP server 端口 `8080`
+- API 端口 `1985`
+
+## 6. 编译
+
+## 6.1 Server + Web
 
 ```bash
-cd reallive/server
+cd server
 npm install
 
-# 构建前端
 cd web
 npm install
 npm run build
-cd ..
 ```
 
-构建完成后，前端静态文件输出到 `server/web/dist/`，Server 启动时会自动提供静态文件服务。
-
-### 3.3 Pusher (C++)
+## 6.2 Pusher
 
 ```bash
-cd reallive/pusher
+cd pusher
 mkdir -p build && cd build
 cmake ..
 make -j$(nproc)
 ```
 
-编译成功后生成 `build/reallive-pusher`。
+若缺失依赖，CMake 日志会提示 `OpenCV/TFLite/MQTT` 对应能力是否启用。
 
-> **注意：** Pusher 只能在 Raspberry Pi 5 (aarch64) 上编译，因为依赖 libcamera 和 V4L2 M2M 硬件编码器。
-
-### 3.4 Puller (C++)
+## 6.3 Puller（可选）
 
 ```bash
-cd reallive/puller
+cd puller
 mkdir -p build && cd build
 cmake ..
 make -j$(nproc)
 ```
 
-编译成功后生成 `build/reallive-puller`。
+说明：puller 仍可用于辅助录制/实验，但不是当前 watch 时间轴主数据来源。
 
-**编译选项：**
+## 7. 启动顺序（推荐）
 
-| CMake 选项 | 默认值 | 说明 |
-|-----------|-------|------|
-| `-DPLATFORM_RPI5=ON/OFF` | 自动检测 | 启用 Raspberry Pi 5 平台支持 |
-| `-DENABLE_HW_DECODE=ON/OFF` | 跟随 PLATFORM_RPI5 | 启用 V4L2 M2M 硬件解码 |
-
-### 3.5 运行单元测试（可选）
-
-**Pusher 测试：**
-```bash
-cd reallive/pusher/tests
-mkdir -p build && cd build
-cmake ..
-make -j$(nproc)
-./pusher_tests
-```
-
-**Puller 测试：**
-```bash
-cd reallive/puller/tests
-mkdir -p build && cd build
-cmake ..
-make -j$(nproc)
-./puller_tests
-```
-
-**Server 测试：**
-```bash
-cd reallive/server
-npm test
-```
-
-## 4. 部署配置
-
-### 4.1 SRS 媒体服务器配置
-
-#### 方式一：源码部署
-
-创建 SRS 配置文件 `/opt/srs/trunk/conf/reallive.conf`：
-
-```nginx
-listen              1935;
-max_connections     1000;
-daemon              off;
-
-http_server {
-    enabled         on;
-    listen          8080;
-    dir             ./objs/nginx/html;
-    crossdomain     on;
-}
-
-http_api {
-    enabled         on;
-    listen          1985;
-    crossdomain     on;
-}
-
-vhost __defaultVhost__ {
-    # HTTP-FLV 拉流
-    http_remux {
-        enabled     on;
-        mount       [vhost]/[app]/[stream].flv;
-    }
-
-    # GOP 缓存，加速首帧显示
-    play {
-        gop_cache       on;
-        gop_cache_max_frames 2500;
-    }
-
-    # 可选：HLS 支持（用于移动端兼容）
-    hls {
-        enabled     off;
-    }
-}
-```
-
-#### 方式二：Docker 部署（推荐用于快速上手）
+## 7.1 启动 MQTT
 
 ```bash
-docker run -d \
-    --name srs \
-    --restart always \
-    -p 1935:1935 \
-    -p 80:80 \
-    -p 1985:1985 \
-    ossrs/srs:5
+sudo systemctl start mosquitto
 ```
 
-Docker 方式使用 SRS 默认配置，已内置 RTMP 接收和 HTTP-FLV 输出，开箱即用。
+## 7.2 启动 SRS
 
-#### SRS 端口说明
-
-| 端口 | 协议 | 用途 |
-|------|------|------|
-| 1935 | RTMP | 接收 Pusher 推流 |
-| 8080 | HTTP | HTTP-FLV 拉流 / SRS 控制台 |
-| 1985 | HTTP | SRS API 接口（查看流状态等） |
-
-#### HTTP-FLV 拉流 URL 格式
-
-```
-http://<srs-ip>/live/<stream_key>.flv
-```
-
-例如 Pusher 推流到 `rtmp://<srs-ip>:1935/live/camera01`，则拉流地址为：
-```
-http://<srs-ip>/live/camera01.flv
-```
-
-#### 验证 SRS 状态
+方式 A（Docker）：
 
 ```bash
-# 查看 SRS API，确认服务运行
-curl http://localhost:1985/api/v1/versions
-
-# 查看当前活跃的流
-curl http://localhost:1985/api/v1/streams
-
-# 访问 SRS 控制台（浏览器）
-# http://<srs-ip>
+docker run -d --name srs --restart unless-stopped \
+  -p 1935:1935 -p 8080:8080 -p 1985:1985 \
+  -v /path/to/reallive/server/srs.conf:/usr/local/srs/conf/srs.conf \
+  ossrs/srs:5 ./objs/srs -c conf/srs.conf
 ```
 
-### 4.2 Server 配置
-
-Server 通过环境变量配置：
-
-| 环境变量 | 默认值 | 说明 |
-|---------|-------|------|
-| `PORT` | `3000` | HTTP 服务端口 |
-| `JWT_SECRET` | `reallive-dev-secret-change-in-production` | JWT 签名密钥（**生产环境必须修改**） |
-| `DB_PATH` | `server/data/reallive.db` | SQLite 数据库路径 |
-
-### 4.3 Pusher 配置
-
-编辑 `pusher/config/pusher.json`：
-
-```json
-{
-    "url": "rtmp://192.168.1.100:1935/live",
-    "stream_key": "camera01",
-    "width": 1920,
-    "height": 1080,
-    "fps": 30,
-    "codec": "h264",
-    "bitrate": 4000000,
-    "profile": "main",
-    "enable_audio": false,
-    "sample_rate": 44100,
-    "channels": 1,
-    "audio_device": "default"
-}
-```
-
-| 字段 | 说明 |
-|------|------|
-| `url` | RTMP 服务器地址（SRS 所在 IP:1935） |
-| `stream_key` | 流密钥，与 Puller 拉流 URL 中的 stream 名对应 |
-| `width` / `height` | 视频分辨率 |
-| `fps` | 帧率 |
-| `bitrate` | 编码码率（bps） |
-| `profile` | H.264 编码配置 (baseline / main / high) |
-| `enable_audio` | 是否启用音频采集 |
-
-也可通过命令行参数覆盖配置文件：
+方式 B（本机二进制）：
 
 ```bash
-./reallive-pusher --help
-
-Usage: reallive-pusher [options]
-  -c, --config <file>   Config file path (JSON)
-  -u, --url <url>       RTMP server URL
-  -k, --key <key>       Stream key
-  -w, --width <px>      Video width (default: 1920)
-  -h, --height <px>     Video height (default: 1080)
-  -f, --fps <fps>       Frame rate (default: 30)
-  -b, --bitrate <bps>   Encoder bitrate (default: 4000000)
-  --audio               Enable audio capture
-  --help                Show this help
+/path/to/srs -c /path/to/reallive/server/srs.conf
 ```
 
-### 4.4 Puller 配置
-
-编辑 `puller/config/puller.json`：
-
-```json
-{
-    "server": {
-        "url": "http://192.168.1.100/live/camera01.flv",
-        "stream_key": ""
-    },
-    "storage": {
-        "output_dir": "./recordings",
-        "format": "mp4",
-        "segment_duration": 3600
-    },
-    "decode": {
-        "hardware": true
-    }
-}
-```
-
-| 字段 | 说明 |
-|------|------|
-| `url` | HTTP-FLV 拉流地址，格式 `http://<srs-ip>/live/<stream_key>.flv` |
-| `output_dir` | 录像文件存储目录 |
-| `format` | 输出容器格式 (mp4) |
-| `segment_duration` | 录像分段时长（秒），默认 3600 = 1 小时 |
-| `hardware` | 是否启用 V4L2 硬件解码 |
-
-命令行参数：
+## 7.3 启动 Server
 
 ```bash
-./reallive-puller --help
-
-Usage: reallive-puller [options]
-  -c, --config <path>   Config file path (default: config/puller.json)
-  -u, --url <url>       Override stream URL
-  -o, --output <dir>    Override output directory
-  -h, --help            Show this help message
-```
-
-## 5. 启动运行
-
-按以下顺序启动各组件：
-
-### 第一步：启动 SRS 媒体服务器
-
-**源码方式：**
-```bash
-cd /opt/srs/trunk
-./objs/srs -c conf/reallive.conf
-```
-
-**Docker 方式：**
-```bash
-docker start srs
-```
-
-**验证 SRS 已就绪：**
-```bash
-# 检查端口监听
-ss -tlnp | grep -E '1935|8080|1985'
-
-# 检查 API 响应
-curl -s http://localhost:1985/api/v1/versions | head
-```
-
-### 第二步：启动 Server
-
-```bash
-cd reallive/server
-
-# 开发模式（自动重载）
+cd server
 npm run dev
-
-# 或 生产模式
-JWT_SECRET="your-strong-secret-key" npm start
 ```
 
-Server 启动后：
-- API 服务: `http://<server-ip>:3000/api/`
-- Web UI: `http://<server-ip>:3000/`
-- WebSocket 信令: `ws://<server-ip>:3000/ws/signaling`
+说明：若 `server.json` 中端口为 `80`，Linux 下通常需要 root 权限或端口能力；开发环境可改为 `3000`/`8088` 等非特权端口。
 
-### 第三步：启动 Pusher（推流端）
+## 7.4 启动 Pusher
 
 ```bash
-cd reallive/pusher
-
-# 使用配置文件
+cd pusher
 ./build/reallive-pusher -c config/pusher.json
-
-# 或直接指定参数
-./build/reallive-pusher -u rtmp://192.168.1.100:1935/live -k camera01
 ```
 
-推流成功后验证：
-```bash
-# 通过 SRS API 查看活跃的流
-curl -s http://<srs-ip>:1985/api/v1/streams | python3 -m json.tool
+## 7.5 启动 Web（开发模式，可选）
 
-# 用 ffplay 测试拉流（需要有显示器的机器上执行）
-ffplay http://<srs-ip>/live/camera01.flv
-```
+如果只使用 server 内置静态页面（`web/dist`）可不单独启动。
 
-### 第四步：启动 Puller（拉流录像端）
+开发调试前端时：
 
 ```bash
-cd reallive/puller
-
-# 使用配置文件
-./build/reallive-puller -c config/puller.json
-
-# 或直接指定参数
-./build/reallive-puller -u http://192.168.1.100/live/camera01.flv -o ./recordings
+cd server/web
+npm run dev
 ```
 
-Puller 会持续拉流并存储为 MP4 文件，按 `segment_duration` 自动分段。
+## 8. 启动后自检清单
 
-录像文件存储在配置的 `output_dir` 目录下，命名格式：
-```
-recordings/
-├── 20260211_143000_0000.mp4    # 第一个分段
-├── 20260211_153000_0001.mp4    # 第二个分段（1小时后自动轮转）
-└── ...
-```
-
-### 第五步：Web 浏览器观看
-
-1. 打开浏览器访问 `http://<server-ip>:3000/`
-2. 注册账号并登录
-3. 在 Dashboard 中添加摄像头
-4. 点击 "Watch Live" 观看实时画面
-
-## 6. 停止服务
-
-各组件均支持 `Ctrl+C` (SIGINT) 优雅停止：
+## 8.1 SRS
 
 ```bash
-# Pusher / Puller: 按 Ctrl+C，等待管线清理完成
-# Server: 按 Ctrl+C
+curl -s http://127.0.0.1:1985/api/v1/versions
+curl -s http://127.0.0.1:1985/api/v1/streams
+```
 
-# SRS（源码方式）:
-# 按 Ctrl+C（前台运行时），或：
-kill $(cat /opt/srs/trunk/objs/srs.pid)
+## 8.2 Server
 
-# SRS（Docker 方式）:
+```bash
+curl -s http://127.0.0.1:80/api/health
+```
+
+预期看到 `status: ok`。
+
+## 8.3 MQTT 控制链路
+
+- Server 日志应出现：`[MQTT Control] Connected ... subscribed .../state`
+- Pusher 日志应出现：`[MQTT] Runtime control started`
+
+## 8.4 Camera 状态链路
+
+- Dashboard 页面进入后可见 camera 卡片状态。
+- Watch 页面打开后，`/watch/start` 成功，设备应进入目标推流状态（`desiredLive=true` 或 `desired_live=true`）。
+- 关闭 Watch 后，经过 grace 时间（默认 30s）应自动停止 live push。
+
+## 9. 运行时行为说明
+
+## 9.1 按需推流
+
+- watch 有会话：设备保持 live push。
+- watch 全部离开：达到 `WATCH_LIVE_STOP_GRACE_MS` 后 server 下发停推命令。
+- 设备状态通过 MQTT `.../state` 回传，dashboard 显示在线/推流中。
+
+## 9.2 历史录制与回看
+
+- pusher 会把录像分段写入 `record_output_dir/<stream_key>/`。
+- 生成文件：
+  - `segment_<start>_<end>.mp4`
+  - `segment_<start>_<end>.jpg`
+  - `events.ndjson`
+- server `historyService` 扫描这些文件并生成时间轴和播放定位。
+
+## 9.3 存储自动清理
+
+- 当磁盘空闲 < `record_min_free_percent`（默认 15%）开始删最旧分段。
+- 删除直到空闲达到 `record_target_free_percent`（默认 20%）。
+
+## 9.4 运行态字段口径（联调必看）
+
+在日志、接口和 MQTT 抓包中会同时看到 camelCase 与 snake_case，语义一致：
+
+- 目标推流状态（desired live）：
+  - server 侧常见：`desiredLive`
+  - MQTT/control payload：`desired_live`
+- 实际推流状态（active live）：
+  - server 侧常见：`activeLive`
+  - MQTT/control payload：`active_live`
+- 进程运行态：
+  - 双方统一：`running`
+
+判定建议：
+
+- 看“是否真在推流”优先使用 `active live`。
+- `desired live=true` 但 `active live=false` 通常表示正在启动、网络异常或设备端尚未切换完成。
+
+## 9.5 按需推流排查时序（实战）
+
+标准链路：
+
+1. 打开 Watch 后，server 收到 `/watch/start`，计算 `desired` 为 true。
+2. server 通过 MQTT 发布 live:on。
+3. pusher 切换为推流中，回传 `active` 为 true。
+4. 关闭 Watch（或会话超时）后，server 等待 grace，再发布 live:off。
+5. pusher 回传 `active` 为 false，SRS live 流消失。
+
+建议观察点：
+
+- server 日志：`liveDemandService` 目标态变化、`mqttControlService` publish 成功/失败。
+- pusher 日志：收到 live 命令、`setLivePushEnabled` 生效、RTMP 连接状态变化。
+- SRS API：`/api/v1/streams` 中该 `stream_key` 是否按预期出现/消失。
+
+## 9.6 历史回看排查时序（实战）
+
+标准链路：
+
+1. Watch 首先请求 `/history/timeline`，server 默认优先用本地 `historyService`。
+2. 用户 seek 时请求 `/history/play?ts=...`，返回 `source/mode/playbackUrl/offsetSec`。
+3. 若本地不可播，且 edge replay 已配置，server 可回退 `source=edge`。
+4. 点 “Back To Live” 时可调用 `/history/replay/stop`（edge 场景）并切回 `/live/<stream_key>.flv`。
+
+建议观察点：
+
+- 响应字段是否符合预期：`source`、`mode`、`playbackUrl`、`offsetSec`。
+- local 回放场景下 `playbackUrl` 是否指向 `/history-files/{idx}/...` 可访问路径。
+- 出现黑屏 seek 点时，先确认目标时间是否落在 `playable=true` 的 segment。
+
+## 10. 常用接口速查
+
+登录后（Bearer Token）常用接口：
+
+- `GET /api/cameras`
+- `GET /api/cameras/:id/stream`
+- `POST /api/cameras/:id/watch/start`
+- `POST /api/cameras/:id/watch/heartbeat`
+- `POST /api/cameras/:id/watch/stop`
+- `GET /api/cameras/:id/history/overview`
+- `GET /api/cameras/:id/history/timeline?start=...&end=...`
+- `GET /api/cameras/:id/history/play?ts=...&mode=...`
+- `POST /api/cameras/:id/history/replay/stop`
+
+## 11. 故障排查（按现网问题整理）
+
+## 11.1 Dashboard 看不到 camera 在线
+
+检查：
+
+1. `mosquitto` 是否运行。
+2. server `mqttControl.enabled` 是否为 `true`。
+3. pusher `mqtt_enable` 是否为 `true` 且 topicPrefix 一致。
+4. server 是否收到 state topic。
+
+## 11.2 Watch 只有实时画面，没有时间轴缩略图/事件
+
+检查：
+
+1. pusher 是否启用本地录制 `enable_record`。
+2. 录制目录是否存在 `segment_*.mp4` 与 `.jpg`。
+3. `events.ndjson` 是否有内容。
+4. server 的 `history-files` 静态目录是否可访问。
+
+## 11.3 Seek 后无画面或部分点位黑屏
+
+检查：
+
+1. 目标时间是否落在有效 segment 范围。
+2. 对应 segment 是否完整（非异常中断）。
+3. 该 segment 是否可由 ffmpeg 正常读取（`ffprobe` 检查）。
+
+## 11.4 延时随时间增大
+
+优先检查：
+
+1. SRS 是否使用当前低延迟配置（`gop_cache off`, `min_latency on`）。
+2. 客户端播放缓冲是否持续增长。
+3. 设备端编码与检测是否互相阻塞（当前应为检测线程独立）。
+
+## 11.5 检测框不稳/漏检
+
+检查：
+
+1. `detect_interval_frames`, `detect_infer_interval_ms` 是否过大。
+2. `detect_person_score_threshold` 是否过高。
+3. 模型路径是否正确，TFLite 是否实际启用。
+
+## 12. Android 客户端说明
+
+Android 工程目录：`android/`
+
+- 播放器分层：`Kotlin Player interface -> JNI -> C++ IPlayer/PlayerController -> FfmpegPlayer`
+- 渲染链路：FFmpeg 解码 + GLES 渲染到 `SurfaceView`
+
+FFmpeg Android so 构建：
+
+```bash
+./android/scripts/build_ffmpeg_android.sh
+```
+
+然后使用 Android Studio 打开 `android/` 目录同步构建。
+
+## 13. 停止与清理
+
+停止顺序建议：
+
+1. 停止 pusher
+2. 停止 server
+3. 停止 SRS
+4. 如需要再停止 mosquitto
+
+命令示例：
+
+```bash
+# 前台进程直接 Ctrl+C
+
 docker stop srs
+sudo systemctl stop mosquitto
 ```
-
-## 7. 典型部署拓扑
-
-### 单机部署（测试用）
-
-所有组件运行在同一台 Raspberry Pi 5 上：
-
-```
-Pusher (RTMP) --> localhost:1935 (SRS) --> localhost:80 (HTTP-FLV)
-                                                 |
-                                           Puller 拉流录像
-                                           Server:3000 Web UI
-```
-
-配置中所有 IP 使用 `localhost` 或 `127.0.0.1`。
-
-### 多机部署（生产环境）
-
-```
-[RPi5-A: 推流端]               [服务器: SRS + Server]              [RPi5-B: 录像端]
-  Pusher                          SRS (1935/8080/1985)               Puller
-  CSI Camera                      Server (3000)                      MP4 Storage
-                                  SQLite DB
-       ---- RTMP (1935) ---->          ---- HTTP-FLV (8080) ---->
-```
-
-- 推流端 RPi5 部署在摄像头现场
-- 服务器可以是任意 Linux 主机，运行 SRS + Node.js Server
-- 录像端 RPi5 可部署在需要本地存储的位置
-- 用户通过浏览器访问 Server 的 Web UI 远程观看
-
-## 8. 目录结构总览
-
-```
-reallive/
-├── docs/
-│   ├── architecture.md      # 架构设计文档
-│   ├── test-plan.md         # 测试计划
-│   └── manual.md            # 本手册
-├── server/                  # Node.js 后端 + Vue 前端
-│   ├── src/
-│   │   ├── server.js        # 入口
-│   │   ├── app.js           # Express 应用
-│   │   ├── config.js        # 配置
-│   │   ├── routes/          # API 路由 (auth, cameras)
-│   │   ├── middleware/       # JWT 鉴权中间件
-│   │   ├── models/          # 数据模型 (user, camera, db)
-│   │   └── signaling/       # WebSocket 信令
-│   ├── web/                 # Vue 3 前端
-│   │   ├── src/views/       # 页面 (Login, Register, Dashboard, Watch, MultiView)
-│   │   ├── src/components/  # 组件 (Navbar, CameraCard)
-│   │   ├── src/stores/      # Pinia 状态管理
-│   │   └── src/api/         # API 和信令客户端
-│   ├── test/                # 服务端测试
-│   └── package.json
-├── pusher/                  # C++ 推流端
-│   ├── include/             # 接口定义
-│   │   ├── platform/        # 平台抽象接口
-│   │   └── core/            # 核心 Config/Pipeline
-│   ├── src/
-│   │   ├── main.cpp
-│   │   ├── core/            # Config.cpp, Pipeline.cpp
-│   │   └── platform/rpi5/   # RPi5 实现 (Libcamera, V4L2Encoder, Alsa, RTMP)
-│   ├── config/pusher.json
-│   ├── tests/               # 单元测试
-│   └── CMakeLists.txt
-├── puller/                  # C++ 拉流录像端
-│   ├── include/             # 接口定义
-│   │   ├── platform/        # 平台抽象接口
-│   │   └── core/            # Config/PullPipeline
-│   ├── src/
-│   │   ├── main.cpp
-│   │   ├── core/            # Config.cpp, PullPipeline.cpp
-│   │   └── platform/rpi5/   # RPi5 实现 (FFmpegReceiver, V4L2Decoder, Mp4Storage)
-│   ├── config/puller.json
-│   ├── tests/               # 单元测试
-│   └── CMakeLists.txt
-└── README.md
-```
-
-## 9. 常见问题
-
-**Q: Pusher 报 "No cameras found"**
-A: 确认 CSI 摄像头连接正确，运行 `libcamera-hello` 测试摄像头是否可用。
-
-**Q: Pusher 报 "Failed to open /dev/video11"**
-A: V4L2 M2M 编码器设备号可能不同，运行 `v4l2-ctl --list-devices` 查看实际设备路径。
-
-**Q: Pusher 推流成功但 SRS API 没有显示流**
-A: 检查推流 URL 格式是否正确：`rtmp://<srs-ip>:1935/live/<stream_key>`。通过 `curl http://<srs-ip>:1985/api/v1/streams` 确认。
-
-**Q: Puller 连接 HTTP-FLV 超时**
-A: 确认 SRS 已启动且有活跃推流。先用 `curl -v http://<srs-ip>/live/<key>.flv` 测试是否能收到数据。
-
-**Q: Puller 报 "Failed to find stream info"**
-A: HTTP-FLV 流必须有 Pusher 正在推流才能拉取。确认 Pusher 已启动并成功推流后再启动 Puller。
-
-**Q: Web UI 登录后页面空白**
-A: 确认已执行 `cd server/web && npm run build`，前端静态文件需要构建后才能被 Server 提供。
-
-**Q: 录像文件无法播放**
-A: 确保 Puller 是通过 `Ctrl+C` 正常停止的，非正常退出可能导致 MP4 文件未正确写入 trailer。可用 `ffprobe <file>.mp4` 检查文件完整性。
-
-**Q: SRS 在 ARM (Raspberry Pi) 上编译失败**
-A: SRS 5.0 支持 aarch64 架构。确保使用 `5.0release` 分支。也可直接使用 Docker 方式部署：`docker run -d -p 1935:1935 -p 80:80 -p 1985:1985 ossrs/srs:5`。
