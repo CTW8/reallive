@@ -32,14 +32,24 @@ function eventDescription(type) {
       return 'Started streaming'
     case 'stream-stop':
       return 'Stopped streaming'
+    case 'person-detected':
+      return 'Person detected'
     default:
       return type
   }
 }
 
+function formatScore(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return ''
+  const pct = Math.round(Math.max(0, Math.min(1, n)) * 100)
+  return ` (${pct}%)`
+}
+
 function dotClass(type) {
   if (type === 'stream-start') return 'event-dot dot-green'
   if (type === 'stream-stop') return 'event-dot dot-red'
+  if (type === 'person-detected') return 'event-dot dot-orange'
   return 'event-dot dot-gray'
 }
 </script>
@@ -60,7 +70,7 @@ function dotClass(type) {
             <span class="event-camera">{{ event.cameraName }}</span>
             <span class="event-time">{{ timeAgo(event.timestamp) }}</span>
           </div>
-          <span class="event-desc">{{ eventDescription(event.type) }}</span>
+          <span class="event-desc">{{ eventDescription(event.type) }}{{ event.type === 'person-detected' ? formatScore(event.score) : '' }}</span>
         </div>
       </div>
     </div>
@@ -143,6 +153,11 @@ function dotClass(type) {
 .dot-red {
   background: var(--danger);
   box-shadow: 0 0 6px rgba(248, 113, 113, 0.4);
+}
+
+.dot-orange {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.45);
 }
 
 .dot-gray {

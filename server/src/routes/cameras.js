@@ -72,7 +72,9 @@ router.get('/:id/stream', (req, res) => {
   // Get real-time SRS stream info if available
   const srsInfo = getStreamInfo(camera.stream_key);
   const seiInfo = getSeiInfo(camera.stream_key);
-  console.log(`[Camera API] Getting stream info for camera ${camera.id}, stream_key=${camera.stream_key}, srs=${JSON.stringify(srsInfo)}`);
+  if (process.env.CAMERA_STREAM_INFO_LOG === '1') {
+    console.log(`[Camera API] Getting stream info for camera ${camera.id}, stream_key=${camera.stream_key}, srs=${JSON.stringify(srsInfo)}`);
+  }
 
   res.json({
     camera: {

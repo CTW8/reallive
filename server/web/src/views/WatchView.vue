@@ -23,6 +23,7 @@ const historyTimeline = ref({
   ranges: [],
   thumbnails: [],
   segments: [],
+  events: [],
   nowMs: null,
 })
 const historySelectedMs = ref(null)
@@ -35,6 +36,7 @@ const historyReplayTransport = ref('')
 const timelineZoomPct = ref(35)
 const timelineZoomAnchorMs = ref(null)
 const telemetryChartRef = ref(null)
+const telemetryCoreChartRef = ref(null)
 
 const videoRef = ref(null)
 let player = null
@@ -43,6 +45,7 @@ let refreshTimer = null
 let latencyTimer = null
 let historyRefreshTimer = null
 let telemetryChartInstance = null
+let telemetryCoreChartInstance = null
 let timelineZoomTimer = null
 let echartsCore = null
 let echartsLoadPromise = null
@@ -58,7 +61,16 @@ const latencyInfo = ref({
   dropped: 0,
   decoded: 0,
   speed: 0,
+  decodeFps: 0,
 })
+const LIVE_TARGET_BUFFER_SEC = 0.15
+const LIVE_SOFT_CATCHUP_BUFFER_SEC = 0.35
+const LIVE_HARD_CATCHUP_BUFFER_SEC = 0.9
+const LIVE_HARD_CATCHUP_COOLDOWN_MS = 600
+let lastLiveHardCatchupMs = 0
+let lastQualitySampleMs = 0
+let lastQualityTotalFrames = 0
+let decodeFpsEma = 0
 
 const telemetryInfo = computed(() => streamInfo.value?.sei?.telemetry || null)
 const telemetryHistory = computed(() => {
@@ -75,13 +87,29 @@ const telemetryPoints = computed(() => {
   return [{
     ts: Date.now(),
     cpuPct: telemetryInfo.value.cpuPct,
+    cpuCorePct: telemetryInfo.value.cpuCorePct,
     memoryPct: telemetryInfo.value.memoryPct,
     storagePct: telemetryInfo.value.storagePct,
   }]
 })
+const telemetryCoreLoads = computed(() => {
+  const cores = telemetryInfo.value?.cpuCorePct
+  if (!Array.isArray(cores) || !cores.length) return []
+  return cores.map((value, index) => ({
+    core: index,
+    load: toPct(value),
+  }))
+})
+const hasCoreTelemetryData = computed(() => {
+  return telemetryPoints.value.some((point) => {
+    const cores = Array.isArray(point?.cpuCorePct) ? point.cpuCorePct : []
+    return cores.some((value) => Number.isFinite(Number(value)))
+  })
+})
 const telemetryUpdatedAt = computed(() => streamInfo.value?.sei?.updatedAt || null)
 const cameraSeiConfig = computed(() => streamInfo.value?.sei?.cameraConfig || null)
 const configurableSeiConfig = computed(() => streamInfo.value?.sei?.configurable || null)
+const livePersonState = computed(() => streamInfo.value?.sei?.person || null)
 const telemetryStateLabel = computed(() => {
   if (!telemetryInfo.value) return 'SEI offline'
   if (telemetryHistory.value.length >= 2) return `SEI online · ${telemetryHistory.value.length} pts`
@@ -93,6 +121,53 @@ const isHistoryMode = computed(() => playbackMode.value === 'history')
 
 const hasHistory = computed(() => {
   return !!historyOverview.value?.hasHistory && historyTimeline.value.startMs != null
+})
+
+const timelineEventFilter = ref('person-detected')
+const pinnedTimelineEventId = ref('')
+
+const timelineAllEvents = computed(() => {
+  const timelineEvents = Array.isArray(historyTimeline.value?.events) ? historyTimeline.value.events : []
+  const seiEventsRaw = Array.isArray(streamInfo.value?.sei?.personEvents) ? streamInfo.value.sei.personEvents : []
+  const seiEvents = seiEventsRaw.map((evt) => ({
+    ...evt,
+    type: evt?.type || 'person-detected',
+  }))
+
+  const merged = [...timelineEvents, ...seiEvents]
+  const seen = new Set()
+  const normalized = []
+  for (const evt of merged) {
+    if (!evt) continue
+    const ts = Number(evt.ts)
+    if (!Number.isFinite(ts)) continue
+    const type = String(evt.type || 'event')
+    const bbox = evt.bbox && typeof evt.bbox === 'object' ? evt.bbox : {}
+    const x = Number(bbox.x || 0)
+    const y = Number(bbox.y || 0)
+    const w = Number(bbox.w || 0)
+    const h = Number(bbox.h || 0)
+    const key = `${type}:${Math.floor(ts)}:${x}:${y}:${w}:${h}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    normalized.push({
+      ...evt,
+      type,
+      ts,
+      bbox: { x, y, w, h },
+    })
+  }
+  normalized.sort((a, b) => a.ts - b.ts)
+  return normalized.slice(-500).map((evt, index) => ({
+    ...evt,
+    id: `evt-${evt.type}-${evt.ts}-${index}`,
+  }))
+})
+
+const timelineDisplayEvents = computed(() => {
+  const selected = String(timelineEventFilter.value || 'person-detected')
+  if (selected === 'all') return timelineAllEvents.value
+  return timelineAllEvents.value.filter((evt) => evt.type === selected)
 })
 
 const timelineGrowthDeltaMs = computed(() => {
@@ -169,6 +244,30 @@ const timelineCursorLeft = computed(() => {
   const span = Math.max(1, max - min)
   const pct = ((selectedTimelineMs.value - min) / span) * 100
   return Math.max(0, Math.min(100, pct))
+})
+
+const timelineEventMarkers = computed(() => {
+  const min = Number(timelineMinMs.value)
+  const max = Number(timelineMaxMs.value)
+  const span = Math.max(1, max - min)
+  return timelineDisplayEvents.value
+    .filter((evt) => evt.ts >= min && evt.ts <= max)
+    .map((evt) => {
+      const left = ((evt.ts - min) / span) * 100
+      return {
+        ...evt,
+        left: Math.max(0, Math.min(100, left)),
+      }
+    })
+})
+
+const pinnedTimelineEvent = computed(() => {
+  if (!pinnedTimelineEventId.value) return null
+  return timelineAllEvents.value.find((evt) => evt.id === pinnedTimelineEventId.value) || null
+})
+
+const timelineRecentEvents = computed(() => {
+  return timelineDisplayEvents.value.slice(-10).reverse()
 })
 
 const timelineTickMarks = computed(() => {
@@ -251,7 +350,7 @@ const cameraConfigItems = computed(() => {
         ? `${camera.width}x${camera.height}`
         : (srs?.width && srs?.height ? `${srs.width}x${srs.height}` : '-'),
     },
-    { key: 'FPS', value: formatOptionalNumber(camera?.fps ?? srs?.fps, 1) },
+    { key: 'FPS', value: formatOptionalNumber(camera?.fps, 1) },
     { key: 'Pixel Format', value: camera?.pixel_format || '-' },
     { key: 'Codec', value: camera?.codec || srs?.codec || '-' },
     { key: 'Bitrate', value: formatBitrate(mergedBitrate) },
@@ -286,6 +385,38 @@ function toPct(value) {
   return Math.max(0, Math.min(100, n))
 }
 
+const coreLinePalette = [
+  '#f87171', '#fb923c', '#facc15', '#4ade80',
+  '#22d3ee', '#60a5fa', '#a78bfa', '#f472b6',
+  '#34d399', '#38bdf8', '#c084fc', '#94a3b8',
+]
+
+function buildCoreSeries(points) {
+  let maxCores = 0
+  for (const point of points) {
+    const cores = Array.isArray(point?.cpuCorePct) ? point.cpuCorePct : []
+    if (cores.length > maxCores) maxCores = cores.length
+  }
+  if (!maxCores) return []
+
+  return Array.from({ length: maxCores }, (_, coreIndex) => ({
+    name: `C${coreIndex}`,
+    type: 'line',
+    data: points.map((point) => {
+      const cores = Array.isArray(point?.cpuCorePct) ? point.cpuCorePct : []
+      const value = Number(cores[coreIndex])
+      return Number.isFinite(value) ? toPct(value) : null
+    }),
+    showSymbol: false,
+    connectNulls: false,
+    smooth: 0.15,
+    lineStyle: {
+      width: 1.1,
+      color: coreLinePalette[coreIndex % coreLinePalette.length],
+    },
+  }))
+}
+
 async function ensureEchartsLoaded() {
   if (echartsCore) return echartsCore
   if (!echartsLoadPromise) {
@@ -299,6 +430,7 @@ async function ensureEchartsLoaded() {
         charts.LineChart,
         components.GridComponent,
         components.TooltipComponent,
+        components.LegendComponent,
         renderers.CanvasRenderer,
       ])
       echartsCore = core
@@ -309,15 +441,21 @@ async function ensureEchartsLoaded() {
 }
 
 async function initTelemetryChart() {
-  if (!telemetryChartRef.value) return
-  if (telemetryChartInstance) return
   const ec = await ensureEchartsLoaded()
-  telemetryChartInstance = ec.init(telemetryChartRef.value)
+  if (telemetryChartRef.value && !telemetryChartInstance) {
+    telemetryChartInstance = ec.init(telemetryChartRef.value)
+  }
+  if (telemetryCoreChartRef.value && !telemetryCoreChartInstance) {
+    telemetryCoreChartInstance = ec.init(telemetryCoreChartRef.value)
+  }
 }
 
 function resizeTelemetryChart() {
   if (telemetryChartInstance) {
     telemetryChartInstance.resize()
+  }
+  if (telemetryCoreChartInstance) {
+    telemetryCoreChartInstance.resize()
   }
 }
 
@@ -328,17 +466,96 @@ async function updateTelemetryChart() {
   }
 
   await initTelemetryChart()
-  if (!telemetryChartInstance) return
-
   const points = telemetryPoints.value
   const xData = points.map((p) => Number(p.ts) || Date.now())
   const cpuData = points.map((p) => toPct(p.cpuPct))
   const memData = points.map((p) => toPct(p.memoryPct))
   const storageData = points.map((p) => toPct(p.storagePct))
 
-  telemetryChartInstance.setOption({
+  if (telemetryChartInstance) {
+    telemetryChartInstance.setOption({
+      animation: false,
+      grid: { left: 44, right: 14, top: 16, bottom: 28 },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(17, 24, 39, 0.92)',
+        borderColor: 'rgba(148, 163, 184, 0.35)',
+        borderWidth: 1,
+        textStyle: { color: '#e5e7eb' },
+        valueFormatter: (v) => `${Number(v).toFixed(1)}%`,
+        axisPointer: { type: 'line', lineStyle: { color: 'rgba(148, 163, 184, 0.6)', width: 1 } },
+      },
+      legend: { show: false },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: xData,
+        axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: 'rgba(203, 213, 225, 0.86)',
+          fontSize: 11,
+          formatter: (v) => formatTelemetryAxisTime(v),
+        },
+        splitLine: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        min: 0,
+        max: 100,
+        interval: 20,
+        axisLine: { show: true, lineStyle: { color: 'rgba(148, 163, 184, 0.35)' } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: 'rgba(203, 213, 225, 0.86)',
+          fontSize: 11,
+          formatter: '{value}%',
+        },
+        splitLine: {
+          show: true,
+          lineStyle: { color: 'rgba(148, 163, 184, 0.16)', width: 1 },
+        },
+      },
+      series: [
+        {
+          name: 'CPU',
+          type: 'line',
+          data: cpuData,
+          showSymbol: false,
+          smooth: 0.22,
+          lineStyle: { width: 1.25, color: '#f87171' },
+        },
+        {
+          name: 'MEM',
+          type: 'line',
+          data: memData,
+          showSymbol: false,
+          smooth: 0.22,
+          lineStyle: { width: 1.25, color: '#60a5fa' },
+        },
+        {
+          name: 'DISK',
+          type: 'line',
+          data: storageData,
+          showSymbol: false,
+          smooth: 0.22,
+          lineStyle: { width: 1.25, color: '#34d399' },
+        },
+      ],
+    }, true)
+  }
+
+  if (!telemetryCoreChartInstance) return
+  if (!hasCoreTelemetryData.value) {
+    telemetryCoreChartInstance.clear()
+    return
+  }
+
+  const coreSeries = buildCoreSeries(points)
+  telemetryCoreChartInstance.setOption({
     animation: false,
-    grid: { left: 44, right: 14, top: 16, bottom: 28 },
+    color: coreLinePalette,
+    grid: { left: 44, right: 14, top: 30, bottom: 28 },
     tooltip: {
       trigger: 'axis',
       backgroundColor: 'rgba(17, 24, 39, 0.92)',
@@ -348,7 +565,18 @@ async function updateTelemetryChart() {
       valueFormatter: (v) => `${Number(v).toFixed(1)}%`,
       axisPointer: { type: 'line', lineStyle: { color: 'rgba(148, 163, 184, 0.6)', width: 1 } },
     },
-    legend: { show: false },
+    legend: {
+      type: 'scroll',
+      top: 4,
+      itemWidth: 10,
+      itemHeight: 6,
+      textStyle: {
+        color: 'rgba(203, 213, 225, 0.82)',
+        fontSize: 10,
+      },
+      pageIconColor: 'rgba(203, 213, 225, 0.9)',
+      pageIconInactiveColor: 'rgba(148, 163, 184, 0.5)',
+    },
     xAxis: {
       type: 'category',
       boundaryGap: false,
@@ -379,32 +607,7 @@ async function updateTelemetryChart() {
         lineStyle: { color: 'rgba(148, 163, 184, 0.16)', width: 1 },
       },
     },
-    series: [
-      {
-        name: 'CPU',
-        type: 'line',
-        data: cpuData,
-        showSymbol: false,
-        smooth: 0.22,
-        lineStyle: { width: 1.25, color: '#f87171' },
-      },
-      {
-        name: 'MEM',
-        type: 'line',
-        data: memData,
-        showSymbol: false,
-        smooth: 0.22,
-        lineStyle: { width: 1.25, color: '#60a5fa' },
-      },
-      {
-        name: 'DISK',
-        type: 'line',
-        data: storageData,
-        showSymbol: false,
-        smooth: 0.22,
-        lineStyle: { width: 1.25, color: '#34d399' },
-      },
-    ],
+    series: coreSeries,
   }, true)
 }
 
@@ -456,6 +659,10 @@ watch(isLiveMode, (liveMode) => {
   void loadTimelineWindow(center, true)
 })
 
+watch(timelineEventFilter, () => {
+  pinnedTimelineEventId.value = ''
+})
+
 async function calibrateServerTime() {
   try {
     await fetch('/api/health')
@@ -475,6 +682,10 @@ function cleanup() {
   if (telemetryChartInstance) {
     telemetryChartInstance.dispose()
     telemetryChartInstance = null
+  }
+  if (telemetryCoreChartInstance) {
+    telemetryCoreChartInstance.dispose()
+    telemetryCoreChartInstance = null
   }
   if (socket) {
     socket.off('camera-status')
@@ -501,6 +712,9 @@ function stopLivePlayer() {
     player.destroy()
     player = null
   }
+  lastQualitySampleMs = 0
+  lastQualityTotalFrames = 0
+  decodeFpsEma = 0
 }
 
 function clearHistoryVideo() {
@@ -540,6 +754,7 @@ async function refreshHistoryData(forceTimeline) {
         ranges: [],
         thumbnails: [],
         segments: [],
+        events: [],
         nowMs: Date.now(),
       }
       historySelectedMs.value = Date.now()
@@ -590,6 +805,9 @@ function startFlvPlayer(url) {
     liveBufferLatencyMaxLatency: 0.5,
     liveBufferLatencyMinRemain: 0.1,
     liveBufferLatencyChasingOnPaused: true,
+    autoCleanupSourceBuffer: true,
+    autoCleanupMaxBackwardDuration: 8,
+    autoCleanupMinBackwardDuration: 4,
   })
 
   player.attachMediaElement(video)
@@ -749,7 +967,10 @@ async function loadTimelineWindow(centerMs, force = false) {
   }
 
   const timeline = await cameraApi.getHistoryTimeline(cameraId, { start: startMs, end: endMs })
-  historyTimeline.value = timeline
+  historyTimeline.value = {
+    ...timeline,
+    events: Array.isArray(timeline?.events) ? timeline.events : [],
+  }
 }
 
 function adjustTimelineZoom(deltaPct, anchorMs = null) {
@@ -795,6 +1016,35 @@ function onTimelineChange(event) {
   historySelectedMs.value = tsMs
   void loadTimelineWindow(tsMs)
   seekHistoryAt(tsMs)
+}
+
+function jumpToEvent(ts) {
+  const tsMs = Number(ts)
+  if (!Number.isFinite(tsMs)) return
+  historySelectedMs.value = tsMs
+  timelineDragMs.value = null
+  void loadTimelineWindow(tsMs)
+  seekHistoryAt(tsMs)
+}
+
+function eventTypeLabel(type) {
+  if (type === 'person-detected') return 'Person'
+  return String(type || 'Event')
+}
+
+function eventMarkerClass(type) {
+  if (type === 'person-detected') return 'timeline-person-marker'
+  return 'timeline-generic-marker'
+}
+
+function pinTimelineEvent(marker) {
+  if (!marker?.id) return
+  if (pinnedTimelineEventId.value === marker.id) {
+    pinnedTimelineEventId.value = ''
+    return
+  }
+  pinnedTimelineEventId.value = marker.id
+  jumpToEvent(marker.ts)
 }
 
 function onTimelineThumbError(event) {
@@ -858,9 +1108,30 @@ function updateLatencyMetrics() {
   const info = { ...latencyInfo.value }
 
   if (isLiveMode.value && player) {
+    let bufferEnd = null
     if (video.buffered.length > 0) {
-      const bufferEnd = video.buffered.end(video.buffered.length - 1)
+      bufferEnd = video.buffered.end(video.buffered.length - 1)
       info.buffer = Math.max(0, bufferEnd - video.currentTime)
+    }
+
+    if (bufferEnd != null) {
+      const now = Date.now()
+      if (info.buffer >= LIVE_HARD_CATCHUP_BUFFER_SEC &&
+          now - lastLiveHardCatchupMs >= LIVE_HARD_CATCHUP_COOLDOWN_MS) {
+        const targetTime = Math.max(0, bufferEnd - LIVE_TARGET_BUFFER_SEC)
+        if (targetTime > video.currentTime + 0.02) {
+          video.currentTime = targetTime
+          lastLiveHardCatchupMs = now
+          info.buffer = Math.max(0, bufferEnd - video.currentTime)
+        }
+        video.playbackRate = 1.0
+      } else if (info.buffer >= LIVE_SOFT_CATCHUP_BUFFER_SEC) {
+        video.playbackRate = 1.04
+      } else if (video.playbackRate !== 1.0) {
+        video.playbackRate = 1.0
+      }
+    } else if (video.playbackRate !== 1.0) {
+      video.playbackRate = 1.0
     }
 
     if (streamInfo.value?.srs) {
@@ -884,12 +1155,38 @@ function updateLatencyMetrics() {
     info.buffer = 0
     info.e2e = null
     info.speed = 0
+    if (video.playbackRate !== 1.0) {
+      video.playbackRate = 1.0
+    }
   }
 
   if (video.getVideoPlaybackQuality) {
     const quality = video.getVideoPlaybackQuality()
     info.dropped = quality.droppedVideoFrames || 0
     info.decoded = quality.totalVideoFrames || 0
+
+    const now = Date.now()
+    if (lastQualitySampleMs > 0 && now > lastQualitySampleMs) {
+      const deltaMs = now - lastQualitySampleMs
+      const deltaFrames = info.decoded - lastQualityTotalFrames
+      if (deltaFrames >= 0 && deltaMs >= 120) {
+        const instantFps = (deltaFrames * 1000) / deltaMs
+        if (Number.isFinite(instantFps) && instantFps >= 0 && instantFps <= 120) {
+          decodeFpsEma = decodeFpsEma > 0
+            ? (decodeFpsEma * 0.7 + instantFps * 0.3)
+            : instantFps
+          info.decodeFps = Math.round(decodeFpsEma * 10) / 10
+        }
+      } else if (deltaFrames < 0) {
+        // Source switched or browser counter reset.
+        decodeFpsEma = 0
+        info.decodeFps = 0
+      }
+    } else {
+      info.decodeFps = Math.round(decodeFpsEma * 10) / 10
+    }
+    lastQualitySampleMs = now
+    lastQualityTotalFrames = info.decoded
   }
 
   latencyInfo.value = info
@@ -916,6 +1213,14 @@ function latencyClass(val) {
   return 'latency-bad'
 }
 
+function decodeFpsClass(decodeFps) {
+  const dec = Number(decodeFps)
+  if (!Number.isFinite(dec) || dec <= 0) return ''
+  if (dec >= 24) return 'latency-good'
+  if (dec >= 12) return 'latency-warn'
+  return 'latency-bad'
+}
+
 function formatDuration(ms) {
   const n = Number(ms)
   if (!Number.isFinite(n) || n <= 0) return '0:00'
@@ -939,6 +1244,12 @@ function formatOptionalNumber(value, precision = 1) {
   const n = Number(value)
   if (!Number.isFinite(n)) return '-'
   return n.toFixed(precision).replace(/\.0$/, '')
+}
+
+function formatScore(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '-'
+  return `${Math.round(Math.max(0, Math.min(1, n)) * 100)}%`
 }
 
 function formatBitrate(value) {
@@ -986,6 +1297,9 @@ function formatUpdatedTime(ts) {
         <h2>{{ streamInfo?.camera?.name || 'Camera Stream' }}</h2>
         <span :class="'status-badge status-' + connectionState">{{ connectionState }}</span>
         <span :class="['mode-badge', isLiveMode ? 'mode-live' : 'mode-history']">{{ isLiveMode ? 'LIVE' : 'HISTORY' }}</span>
+        <span v-if="livePersonState?.active" class="person-live-badge">
+          PERSON {{ formatScore(livePersonState?.score) }}
+        </span>
       </div>
       <div class="watch-actions">
         <button v-if="isHistoryMode" class="btn btn-primary btn-sm" @click="returnToLive">Back To Live</button>
@@ -1032,8 +1346,8 @@ function formatUpdatedTime(ts) {
              ? `${streamInfo.srs.width}x${streamInfo.srs.height}` : '-' }}
         </span>
         <span class="bar-sep"></span>
-        <span class="bar-item">
-          {{ streamInfo.srs.fps != null ? `${streamInfo.srs.fps} fps` : '- fps' }}
+        <span class="bar-item bar-latency" :class="decodeFpsClass(latencyInfo.decodeFps)">
+          Decode: {{ formatOptionalNumber(latencyInfo.decodeFps, 1) }} fps
         </span>
         <span class="bar-sep"></span>
         <span class="bar-item">
@@ -1078,6 +1392,13 @@ function formatUpdatedTime(ts) {
           <button class="btn btn-secondary btn-sm" type="button" :disabled="!hasHistory" @click="adjustTimelineZoom(10)">+</button>
         </div>
         <div class="timeline-actions">
+          <label class="timeline-filter">
+            <span>Events</span>
+            <select v-model="timelineEventFilter" :disabled="!hasHistory">
+              <option value="person-detected">Person</option>
+              <option value="all">All</option>
+            </select>
+          </label>
           <button class="btn btn-secondary btn-sm" :disabled="!hasHistory || historyLoading" @click="seekHistoryAt(selectedTimelineMs)">
             View At Cursor
           </button>
@@ -1106,6 +1427,15 @@ function formatUpdatedTime(ts) {
                 @error="onTimelineThumbError"
               />
             </div>
+            <button
+              v-for="marker in timelineEventMarkers"
+              :key="marker.id"
+              :class="eventMarkerClass(marker.type)"
+              type="button"
+              :style="{ left: `${marker.left}%` }"
+              :title="`${eventTypeLabel(marker.type)} ${formatDateTime(marker.ts)} · score ${formatScore(marker.score)}`"
+              @click="pinTimelineEvent(marker)"
+            ></button>
             <div class="timeline-cursor" :style="{ left: `${timelineCursorLeft}%` }"></div>
           </div>
           <input
@@ -1136,8 +1466,29 @@ function formatUpdatedTime(ts) {
         <div class="timeline-meta">
           <span>Total: {{ formatDuration(displayTotalDurationMs) }}</span>
           <span>Segments: {{ historyOverview?.segmentCount || 0 }}</span>
+          <span>Events: {{ timelineEventMarkers.length }}</span>
           <span>Recording: {{ historyOverview?.hasActiveRecording ? 'ON' : 'OFF' }}</span>
           <span>Range: {{ formatDateTime(historyOverview?.timeRange?.startMs) }} ~ {{ formatDateTime(timelineMaxMs) }}</span>
+        </div>
+
+        <div v-if="pinnedTimelineEvent" class="timeline-event-detail">
+          <span class="detail-type">{{ eventTypeLabel(pinnedTimelineEvent.type) }}</span>
+          <span>{{ formatDateTime(pinnedTimelineEvent.ts) }}</span>
+          <span>Score {{ formatScore(pinnedTimelineEvent.score) }}</span>
+          <span v-if="pinnedTimelineEvent.bbox">BBox {{ Math.round(pinnedTimelineEvent.bbox.w) }}x{{ Math.round(pinnedTimelineEvent.bbox.h) }}</span>
+          <button class="btn btn-secondary btn-sm" type="button" @click="pinnedTimelineEventId = ''">Clear</button>
+        </div>
+
+        <div v-if="timelineRecentEvents.length" class="timeline-events-list">
+          <button
+            v-for="evt in timelineRecentEvents"
+            :key="evt.id"
+            class="timeline-event-chip"
+            type="button"
+            @click="pinTimelineEvent(evt)"
+          >
+            {{ eventTypeLabel(evt.type) }} · {{ formatUpdatedTime(evt.ts) }}
+          </button>
         </div>
       </template>
 
@@ -1164,6 +1515,18 @@ function formatUpdatedTime(ts) {
           <div class="telemetry-extra">
             <span>Memory {{ formatOptionalNumber(telemetryInfo?.memoryUsedMb, 1) }} / {{ formatOptionalNumber(telemetryInfo?.memoryTotalMb, 1) }} MB</span>
             <span>Storage {{ formatOptionalNumber(telemetryInfo?.storageUsedGb, 2) }} / {{ formatOptionalNumber(telemetryInfo?.storageTotalGb, 2) }} GB</span>
+          </div>
+          <div v-if="telemetryCoreLoads.length" class="telemetry-core-grid">
+            <span v-for="core in telemetryCoreLoads" :key="core.core" class="telemetry-core-chip">
+              C{{ core.core }} {{ formatOptionalNumber(core.load, 1) }}%
+            </span>
+          </div>
+          <div class="watch-subtitle">Per-Core CPU Load</div>
+          <div v-if="hasCoreTelemetryData" class="telemetry-core-chart-wrap">
+            <div ref="telemetryCoreChartRef" class="telemetry-core-chart"></div>
+          </div>
+          <div v-else class="watch-empty">
+            Waiting for per-core CPU telemetry...
           </div>
         </div>
         <div v-else class="watch-empty">
@@ -1245,6 +1608,17 @@ function formatUpdatedTime(ts) {
 .mode-history {
   color: #60a5fa;
   background: rgba(96, 165, 250, 0.15);
+}
+
+.person-live-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(220, 38, 38, 0.9);
+  border: 1px solid rgba(252, 165, 165, 0.6);
+  border-radius: 10px;
+  padding: 2px 8px;
+  letter-spacing: 0.3px;
 }
 
 .status-connecting {
@@ -1400,6 +1774,25 @@ function formatUpdatedTime(ts) {
   display: flex;
   gap: 8px;
   margin-left: auto;
+  align-items: center;
+}
+
+.timeline-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.timeline-filter select {
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  padding: 0 8px;
 }
 
 .timeline-track-wrap {
@@ -1458,6 +1851,42 @@ function formatUpdatedTime(ts) {
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
   z-index: 3;
+}
+
+.timeline-person-marker {
+  position: absolute;
+  top: 4px;
+  width: 8px;
+  height: calc(100% - 8px);
+  transform: translateX(-50%);
+  border: none;
+  border-radius: 999px;
+  padding: 0;
+  margin: 0;
+  background: rgba(239, 68, 68, 0.92);
+  box-shadow: 0 0 0 1px rgba(255, 230, 230, 0.8);
+  z-index: 4;
+  cursor: pointer;
+}
+
+.timeline-person-marker:hover {
+  background: rgba(248, 113, 113, 1);
+}
+
+.timeline-generic-marker {
+  position: absolute;
+  top: 8px;
+  width: 6px;
+  height: calc(100% - 16px);
+  transform: translateX(-50%);
+  border: none;
+  border-radius: 999px;
+  padding: 0;
+  margin: 0;
+  background: rgba(96, 165, 250, 0.95);
+  box-shadow: 0 0 0 1px rgba(219, 234, 254, 0.75);
+  z-index: 4;
+  cursor: pointer;
 }
 
 .timeline-slider {
@@ -1542,6 +1971,43 @@ function formatUpdatedTime(ts) {
   gap: 14px;
   color: var(--text-secondary);
   font-size: 0.8rem;
+}
+
+.timeline-event-detail {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.timeline-event-detail .detail-type {
+  color: #fca5a5;
+  font-weight: 700;
+}
+
+.timeline-events-list {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.timeline-event-chip {
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.timeline-event-chip:hover {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fecaca;
 }
 
 .timeline-error {
@@ -1634,6 +2100,35 @@ function formatUpdatedTime(ts) {
   font-size: 0.8rem;
 }
 
+.telemetry-core-grid {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.telemetry-core-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.2;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.telemetry-core-chart-wrap {
+  display: grid;
+}
+
+.telemetry-core-chart {
+  width: 100%;
+  height: 180px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.012), rgba(0, 0, 0, 0.16));
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
 .watch-subtitle {
   margin: 12px 0 8px;
   font-size: 0.84rem;
@@ -1708,6 +2203,7 @@ function formatUpdatedTime(ts) {
   .timeline-actions {
     width: 100%;
     margin-left: 0;
+    justify-content: space-between;
   }
 
   .timeline-actions .btn {

@@ -71,6 +71,7 @@ function normalizeOverview(raw) {
     nowMs: toNum(raw.nowMs ?? raw.now_ms, Date.now()),
     totalDurationMs: toNum(raw.totalDurationMs ?? raw.total_duration_ms, 0),
     segmentCount: toNum(raw.segmentCount ?? raw.segment_count, 0),
+    eventCount: toNum(raw.eventCount ?? raw.event_count, 0),
     timeRange,
     ranges: Array.isArray(raw.ranges)
       ? raw.ranges
@@ -104,6 +105,25 @@ function normalizeTimeline(raw) {
     })).filter((seg) => seg.startMs != null && seg.endMs != null)
     : [];
 
+  const events = Array.isArray(raw.events)
+    ? raw.events
+      .map((evt) => {
+        const bboxRaw = evt?.bbox && typeof evt.bbox === 'object' ? evt.bbox : {};
+        return {
+          type: String(evt.type || evt.eventType || ''),
+          ts: toNum(evt.ts ?? evt.timestamp ?? evt.timestamp_ms, null),
+          score: toNum(evt.score, 0),
+          bbox: {
+            x: toNum(bboxRaw.x, 0),
+            y: toNum(bboxRaw.y, 0),
+            w: toNum(bboxRaw.w, 0),
+            h: toNum(bboxRaw.h, 0),
+          },
+        };
+      })
+      .filter((evt) => evt.ts != null)
+    : [];
+
   return {
     startMs: toNum(raw.startMs ?? raw.start_ms, null),
     endMs: toNum(raw.endMs ?? raw.end_ms, null),
@@ -112,6 +132,7 @@ function normalizeTimeline(raw) {
       : [],
     thumbnails,
     segments,
+    events,
     nowMs: toNum(raw.nowMs ?? raw.now_ms, Date.now()),
   };
 }

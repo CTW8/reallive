@@ -111,8 +111,50 @@ function walkFiles(dir, out) {
   }
 }
 
+function readEventLog(streamDir, out) {
+  const eventFile = path.join(streamDir, 'events.ndjson');
+  if (!fs.existsSync(eventFile)) return;
+  let content = '';
+  try {
+    content = fs.readFileSync(eventFile, 'utf8');
+  } catch {
+    return;
+  }
+  if (!content) return;
+
+  const lines = content.split(/\r?\n/);
+  for (const line of lines) {
+    const raw = line.trim();
+    if (!raw) continue;
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    const ts = ensureNumber(parsed.ts, null);
+    if (!Number.isFinite(ts)) continue;
+    const type = String(parsed.type || '').toLowerCase();
+    if (type !== 'person') continue;
+    const bbox = parsed.bbox && typeof parsed.bbox === 'object' ? parsed.bbox : {};
+    const event = {
+      ts: Math.floor(ts),
+      type: 'person-detected',
+      score: ensureNumber(parsed.score, 0),
+      bbox: {
+        x: Math.max(0, Math.floor(ensureNumber(bbox.x, 0))),
+        y: Math.max(0, Math.floor(ensureNumber(bbox.y, 0))),
+        w: Math.max(0, Math.floor(ensureNumber(bbox.w, 0))),
+        h: Math.max(0, Math.floor(ensureNumber(bbox.h, 0))),
+      },
+    };
+    out.push(event);
+  }
+}
+
 function buildSegments(streamKey) {
   const segments = [];
+  const events = [];
   RECORDINGS_ROOTS.forEach((root, rootIndex) => {
     const streamDir = path.join(root, streamKey);
     if (!fs.existsSync(streamDir)) return;
@@ -175,29 +217,39 @@ function buildSegments(streamKey) {
         playable: !isOpen,
       });
     }
+
+    readEventLog(streamDir, events);
   });
 
   if (!segments.length) {
-    return [];
+    return { segments: [], events };
   }
 
   segments.sort((a, b) => a.startMs - b.startMs);
-  return segments;
+  events.sort((a, b) => a.ts - b.ts);
+  return { segments, events };
 }
 
 function loadSegments(streamKey) {
   const key = String(streamKey || '');
-  if (!key) return [];
+  if (!key) return { segments: [], events: [] };
 
   const now = Date.now();
   const hit = cache.get(key);
   if (hit && now - hit.at < CACHE_TTL_MS) {
-    return hit.segments;
+    return {
+      segments: hit.segments,
+      events: hit.events || [],
+    };
   }
 
-  const segments = buildSegments(key);
-  cache.set(key, { at: now, segments });
-  return segments;
+  const built = buildSegments(key);
+  cache.set(key, {
+    at: now,
+    segments: built.segments,
+    events: built.events,
+  });
+  return built;
 }
 
 function mergeRanges(segments) {
@@ -214,7 +266,7 @@ function mergeRanges(segments) {
 }
 
 function getHistoryOverview(streamKey) {
-  const segments = loadSegments(streamKey);
+  const { segments, events } = loadSegments(streamKey);
   if (!segments.length) {
     return {
       hasHistory: false,
@@ -222,6 +274,7 @@ function getHistoryOverview(streamKey) {
       totalDurationMs: 0,
       segmentCount: 0,
       timeRange: null,
+      eventCount: events.length,
     };
   }
 
@@ -241,11 +294,13 @@ function getHistoryOverview(streamKey) {
     ranges: mergeRanges(segments),
     hasActiveRecording: !!activeSegment,
     activeRecordingStartMs: activeSegment ? activeSegment.startMs : null,
+    eventCount: events.length,
   };
 }
 
 function getTimeline(streamKey, query = {}) {
-  const all = loadSegments(streamKey);
+  const loaded = loadSegments(streamKey);
+  const all = loaded.segments;
   if (!all.length) {
     return {
       startMs: null,
@@ -253,6 +308,7 @@ function getTimeline(streamKey, query = {}) {
       ranges: [],
       thumbnails: [],
       segments: [],
+      events: [],
       nowMs: Date.now(),
     };
   }
@@ -264,6 +320,9 @@ function getTimeline(streamKey, query = {}) {
 
   const segments = all.filter((seg) => seg.endMs >= startMs && seg.startMs <= endMs);
   const ranges = mergeRanges(segments);
+  const events = (loaded.events || [])
+    .filter((evt) => evt.ts >= startMs && evt.ts <= endMs)
+    .slice(-1000);
 
   const thumbnails = [];
   for (const seg of segments) {
@@ -291,13 +350,14 @@ function getTimeline(streamKey, query = {}) {
       isOpen: !!seg.isOpen,
       isActive: !!seg.isActive,
     })),
+    events,
     nowMs: Date.now(),
   };
 }
 
 function getPlayback(streamKey, query = {}) {
   const ts = ensureNumber(query.ts, Date.now());
-  const segments = loadSegments(streamKey).filter((seg) => seg.playable && seg.url);
+  const segments = loadSegments(streamKey).segments.filter((seg) => seg.playable && seg.url);
   if (!segments.length) {
     return {
       mode: 'live',

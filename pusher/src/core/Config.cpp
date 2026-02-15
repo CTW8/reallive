@@ -5,6 +5,7 @@
 #include <iostream>
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
 
 // Minimal JSON parser -- avoids external dependency for a small config file.
 // Handles the flat/nested structure of pusher.json without a full JSON library.
@@ -92,6 +93,22 @@ Config::Config() {
     config_.control.port = 8090;
     config_.control.replayRtmpBase = "rtmp://localhost:1935/history";
     config_.control.ffmpegBin = "ffmpeg";
+    config_.detection.enabled = true;
+    config_.detection.drawOverlay = true;
+    config_.detection.intervalFrames = 2;
+    config_.detection.motionRatioThreshold = 0.015;
+    config_.detection.diffThreshold = 22;
+    config_.detection.minBoxAreaRatio = 0.006;
+    config_.detection.holdMs = 1000;
+    config_.detection.eventMinIntervalMs = 1500;
+    config_.detection.useOpenCvMotion = true;
+    config_.detection.useTfliteSsd = true;
+    config_.detection.inferOnMotionOnly = true;
+    config_.detection.tfliteModelPath = "/home/lz/reallive/model/yolov8n_float16.tflite";
+    config_.detection.tfliteLabelPath = "./models/labels.txt";
+    config_.detection.tfliteInputSize = 320;
+    config_.detection.personScoreThreshold = 0.55;
+    config_.detection.inferMinIntervalMs = 220;
     config_.enableAudio = false;
 }
 
@@ -187,12 +204,72 @@ bool Config::parseJson(const std::string& jsonStr) {
     std::string ffmpegBin = jsonValue(jsonStr, "ffmpeg_bin");
     if (!ffmpegBin.empty()) config_.control.ffmpegBin = ffmpegBin;
 
+    config_.detection.enabled = jsonBool(
+        jsonStr, "detect_enable", config_.detection.enabled);
+    config_.detection.drawOverlay = jsonBool(
+        jsonStr, "detect_draw_overlay", config_.detection.drawOverlay);
+    config_.detection.intervalFrames = std::max(
+        1, jsonInt(jsonStr, "detect_interval_frames", config_.detection.intervalFrames));
+    config_.detection.diffThreshold = std::max(
+        4, jsonInt(jsonStr, "detect_diff_threshold", config_.detection.diffThreshold));
+
+    {
+        const std::string motionRatio = jsonValue(jsonStr, "detect_motion_ratio");
+        if (!motionRatio.empty()) {
+            const double value = std::atof(motionRatio.c_str());
+            if (value > 0.0 && value < 1.0) {
+                config_.detection.motionRatioThreshold = value;
+            }
+        }
+    }
+    {
+        const std::string areaRatio = jsonValue(jsonStr, "detect_min_box_area_ratio");
+        if (!areaRatio.empty()) {
+            const double value = std::atof(areaRatio.c_str());
+            if (value > 0.0 && value < 1.0) {
+                config_.detection.minBoxAreaRatio = value;
+            }
+        }
+    }
+    config_.detection.holdMs = std::max(
+        200, jsonInt(jsonStr, "detect_hold_ms", config_.detection.holdMs));
+    config_.detection.eventMinIntervalMs = std::max(
+        200, jsonInt(jsonStr, "detect_event_min_interval_ms", config_.detection.eventMinIntervalMs));
+    config_.detection.useOpenCvMotion = jsonBool(
+        jsonStr, "detect_opencv_motion_enable", config_.detection.useOpenCvMotion);
+    config_.detection.useTfliteSsd = jsonBool(
+        jsonStr, "detect_tflite_enable", config_.detection.useTfliteSsd);
+    config_.detection.inferOnMotionOnly = jsonBool(
+        jsonStr, "detect_infer_on_motion_only", config_.detection.inferOnMotionOnly);
+    config_.detection.tfliteInputSize = std::max(
+        128, jsonInt(jsonStr, "detect_tflite_input_size", config_.detection.tfliteInputSize));
+    config_.detection.inferMinIntervalMs = std::max(
+        10, jsonInt(jsonStr, "detect_infer_interval_ms", config_.detection.inferMinIntervalMs));
+    {
+        const std::string score = jsonValue(jsonStr, "detect_person_score_threshold");
+        if (!score.empty()) {
+            const double value = std::atof(score.c_str());
+            if (value > 0.0 && value <= 1.0) {
+                config_.detection.personScoreThreshold = value;
+            }
+        }
+    }
+    {
+        const std::string modelPath = jsonValue(jsonStr, "detect_tflite_model");
+        if (!modelPath.empty()) config_.detection.tfliteModelPath = modelPath;
+    }
+    {
+        const std::string labelPath = jsonValue(jsonStr, "detect_tflite_labels");
+        if (!labelPath.empty()) config_.detection.tfliteLabelPath = labelPath;
+    }
+
     std::cout << "[Config] Loaded: " << config_.stream.url
               << " " << config_.camera.width << "x" << config_.camera.height
               << "@" << config_.camera.fps << "fps"
               << " bitrate=" << config_.encoder.bitrate
               << " record=" << (config_.record.enabled ? "on" : "off")
               << " control=" << (config_.control.enabled ? "on" : "off")
+              << " detect=" << (config_.detection.enabled ? "on" : "off")
               << std::endl;
 
     return true;

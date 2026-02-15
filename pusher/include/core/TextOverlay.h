@@ -68,6 +68,74 @@ public:
         }
     }
 
+    static void drawBoundingBox(
+        uint8_t* data,
+        int width,
+        int height,
+        int x,
+        int y,
+        int w,
+        int h,
+        int thickness = 3
+    ) {
+        if (!data || width <= 0 || height <= 0 || w <= 0 || h <= 0) return;
+        if (thickness < 1) thickness = 1;
+
+        int x0 = x;
+        int y0 = y;
+        int x1 = x + w - 1;
+        int y1 = y + h - 1;
+
+        if (x0 < 0) x0 = 0;
+        if (y0 < 0) y0 = 0;
+        if (x1 >= width) x1 = width - 1;
+        if (y1 >= height) y1 = height - 1;
+        if (x1 <= x0 || y1 <= y0) return;
+
+        uint8_t* yPlane = data;
+        uint8_t* uvPlane = data + width * height;
+
+        const uint8_t yValue = 96;
+        const uint8_t uValue = 84;
+        const uint8_t vValue = 255;
+
+        auto paintY = [&](int px, int py) {
+            if (px < 0 || py < 0 || px >= width || py >= height) return;
+            yPlane[py * width + px] = yValue;
+        };
+
+        auto paintUv = [&](int px, int py) {
+            if (px < 0 || py < 0 || px >= width || py >= height) return;
+            int uvY = py / 2;
+            int uvX = (px / 2) * 2;
+            int idx = uvY * width + uvX;
+            uvPlane[idx] = uValue;
+            uvPlane[idx + 1] = vValue;
+        };
+
+        for (int t = 0; t < thickness; t++) {
+            const int ty0 = y0 + t;
+            const int ty1 = y1 - t;
+            for (int px = x0; px <= x1; px++) {
+                paintY(px, ty0);
+                paintY(px, ty1);
+                paintUv(px, ty0);
+                paintUv(px, ty1);
+            }
+        }
+
+        for (int t = 0; t < thickness; t++) {
+            const int tx0 = x0 + t;
+            const int tx1 = x1 - t;
+            for (int py = y0; py <= y1; py++) {
+                paintY(tx0, py);
+                paintY(tx1, py);
+                paintUv(tx0, py);
+                paintUv(tx1, py);
+            }
+        }
+    }
+
 private:
     static constexpr int GLYPH_W = 8;
     static constexpr int GLYPH_H = 16;

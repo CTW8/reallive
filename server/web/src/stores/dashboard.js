@@ -12,6 +12,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   const activityEvents = ref([])
   const MAX_EVENTS = 50
+  const cameraEventStates = ref({})
 
   const recentSessions = ref([])
   const sessionsLoading = ref(false)
@@ -55,6 +56,57 @@ export const useDashboardStore = defineStore('dashboard', () => {
     if (activityEvents.value.length > MAX_EVENTS) {
       activityEvents.value.pop()
     }
+
+    if (event?.type === 'person-detected' && event?.cameraId != null) {
+      const cameraId = Number(event.cameraId)
+      if (!Number.isFinite(cameraId)) return
+      const current = cameraEventStates.value[cameraId] || {
+        unread: 0,
+        total: 0,
+        lastTimestamp: null,
+      }
+      cameraEventStates.value = {
+        ...cameraEventStates.value,
+        [cameraId]: {
+          unread: current.unread + 1,
+          total: current.total + 1,
+          lastTimestamp: event.timestamp || new Date().toISOString(),
+        },
+      }
+    }
+  }
+
+  function clearCameraUnread(cameraId) {
+    const id = Number(cameraId)
+    if (!Number.isFinite(id)) return
+    const current = cameraEventStates.value[id]
+    if (!current) return
+    cameraEventStates.value = {
+      ...cameraEventStates.value,
+      [id]: {
+        ...current,
+        unread: 0,
+      },
+    }
+  }
+
+  function setCameraEventTotal(cameraId, total, lastTimestamp = null) {
+    const id = Number(cameraId)
+    if (!Number.isFinite(id)) return
+    const safeTotal = Math.max(0, Number(total) || 0)
+    const current = cameraEventStates.value[id] || {
+      unread: 0,
+      total: 0,
+      lastTimestamp: null,
+    }
+    cameraEventStates.value = {
+      ...cameraEventStates.value,
+      [id]: {
+        unread: current.unread,
+        total: Math.max(current.total, safeTotal),
+        lastTimestamp: current.lastTimestamp || lastTimestamp || null,
+      },
+    }
   }
 
   function setSocketConnected(connected) {
@@ -65,6 +117,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     stats,
     statsLoading,
     activityEvents,
+    cameraEventStates,
     recentSessions,
     sessionsLoading,
     health,
@@ -73,6 +126,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     fetchRecentSessions,
     fetchHealth,
     pushActivityEvent,
+    clearCameraUnread,
+    setCameraEventTotal,
     setSocketConnected,
   }
 })

@@ -5,6 +5,44 @@
 
 namespace reallive {
 
+namespace {
+
+bool hasPixelFormat(const AVPixelFormat* formats, int count, AVPixelFormat target) {
+    if (!formats || count <= 0) return false;
+    for (int i = 0; i < count; ++i) {
+        if (formats[i] == target) return true;
+    }
+    return false;
+}
+
+AVPixelFormat pickPixelFormat(const AVCodecContext* ctx, const AVCodec* codec) {
+#if defined(LIBAVCODEC_VERSION_MAJOR) && LIBAVCODEC_VERSION_MAJOR >= 61
+    const void* configs = nullptr;
+    int configCount = 0;
+    int ret = avcodec_get_supported_config(
+        ctx,
+        codec,
+        AV_CODEC_CONFIG_PIX_FORMAT,
+        0,
+        &configs,
+        &configCount
+    );
+    if (ret >= 0 && configs && configCount > 0) {
+        const auto* formats = static_cast<const AVPixelFormat*>(configs);
+        if (hasPixelFormat(formats, configCount, AV_PIX_FMT_NV12)) {
+            return AV_PIX_FMT_NV12;
+        }
+        if (hasPixelFormat(formats, configCount, AV_PIX_FMT_YUV420P)) {
+            return AV_PIX_FMT_YUV420P;
+        }
+        return formats[0];
+    }
+#endif
+    return AV_PIX_FMT_YUV420P;
+}
+
+} // namespace
+
 AvcodecEncoder::AvcodecEncoder() = default;
 
 AvcodecEncoder::~AvcodecEncoder() {
@@ -42,7 +80,7 @@ bool AvcodecEncoder::init(const EncoderConfig& config) {
     ctx_->height = config.height;
     ctx_->time_base = {1, config.fps};
     ctx_->framerate = {config.fps, 1};
-    ctx_->pix_fmt = AV_PIX_FMT_YUV420P;
+    ctx_->pix_fmt = pickPixelFormat(ctx_, codec_);
     ctx_->bit_rate = config.bitrate;
     ctx_->gop_size = config.gopSize;
     ctx_->max_b_frames = 0;  // no B-frames for low latency
@@ -77,7 +115,9 @@ bool AvcodecEncoder::init(const EncoderConfig& config) {
 
     std::cout << "[AvcodecEncoder] Opened encoder: " << encoderName_
               << " (" << ctx_->width << "x" << ctx_->height
-              << " @" << config.fps << "fps, " << config.bitrate / 1000 << " kbps)" << std::endl;
+              << " @" << config.fps << "fps, " << config.bitrate / 1000 << " kbps)"
+              << " pix_fmt=" << (av_get_pix_fmt_name(ctx_->pix_fmt) ? av_get_pix_fmt_name(ctx_->pix_fmt) : "unknown")
+              << std::endl;
 
     // Allocate frame and packet
     avFrame_ = av_frame_alloc();
@@ -105,9 +145,7 @@ EncodedPacket AvcodecEncoder::encode(const Frame& frame) {
     int ret = av_frame_make_writable(avFrame_);
     if (ret < 0) return result;
 
-    // Convert NV12 input to YUV420P expected by the encoder.
-    // NV12: Y plane (width*height) + interleaved UV plane (width*height/2)
-    // YUV420P: Y plane + U plane (width/2 * height/2) + V plane (width/2 * height/2)
+    // Input frame is NV12.
     int w = ctx_->width;
     int h = ctx_->height;
     const uint8_t* src = frame.data.data();
@@ -118,28 +156,42 @@ EncodedPacket AvcodecEncoder::encode(const Frame& frame) {
         return result;  // not enough data
     }
 
-    // Copy Y plane
     const uint8_t* srcY = src;
     for (int row = 0; row < h; row++) {
         std::memcpy(avFrame_->data[0] + row * avFrame_->linesize[0],
                     srcY + row * w, w);
     }
 
-    // De-interleave UV plane: NV12 UVUVUV... → U plane + V plane
     const uint8_t* srcUV = src + ySize;
-    int uvH = h / 2;
-    int uvW = w / 2;
-    for (int row = 0; row < uvH; row++) {
-        const uint8_t* uvRow = srcUV + row * w;  // NV12 UV row stride = width
-        uint8_t* uRow = avFrame_->data[1] + row * avFrame_->linesize[1];
-        uint8_t* vRow = avFrame_->data[2] + row * avFrame_->linesize[2];
-        for (int col = 0; col < uvW; col++) {
-            uRow[col] = uvRow[col * 2];
-            vRow[col] = uvRow[col * 2 + 1];
+    const int uvH = h / 2;
+    if (ctx_->pix_fmt == AV_PIX_FMT_NV12) {
+        for (int row = 0; row < uvH; row++) {
+            std::memcpy(avFrame_->data[1] + row * avFrame_->linesize[1],
+                        srcUV + row * w, w);
+        }
+    } else {
+        const int uvW = w / 2;
+        for (int row = 0; row < uvH; row++) {
+            const uint8_t* uvRow = srcUV + row * w;
+            uint8_t* uRow = avFrame_->data[1] + row * avFrame_->linesize[1];
+            uint8_t* vRow = avFrame_->data[2] + row * avFrame_->linesize[2];
+            for (int col = 0; col < uvW; col++) {
+                uRow[col] = uvRow[col * 2];
+                vRow[col] = uvRow[col * 2 + 1];
+            }
         }
     }
 
-    avFrame_->pts = frameCount_++;
+    if (frame.pts > 0) {
+        int64_t pts = av_rescale_q(frame.pts, {1, 1000000}, ctx_->time_base);
+        if (pts <= frameCount_) {
+            pts = frameCount_ + 1;
+        }
+        avFrame_->pts = pts;
+        frameCount_ = pts;
+    } else {
+        avFrame_->pts = frameCount_++;
+    }
 
     // Send frame to encoder
     ret = avcodec_send_frame(ctx_, avFrame_);

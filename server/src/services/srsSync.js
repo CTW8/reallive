@@ -11,6 +11,7 @@ const OFFLINE_GRACE_POLLS = Math.max(1, Number(process.env.SRS_OFFLINE_GRACE_POL
 let io = null;
 let timer = null;
 let lastSummaryLogAt = 0;
+let syncInFlight = false;
 
 // Track which stream keys are currently active (to detect changes)
 const activeStreams = new Set();
@@ -39,7 +40,7 @@ function isReplayStreamKey(streamKey) {
 
 function estimateFps(videoInfo, prev, currentFrames, nowMs) {
   const directFps = Number(videoInfo.fps);
-  if (Number.isFinite(directFps) && directFps > 0) {
+  if (Number.isFinite(directFps) && directFps >= 1 && directFps <= 120) {
     return Math.round(directFps * 10) / 10;
   }
 
@@ -49,17 +50,23 @@ function estimateFps(videoInfo, prev, currentFrames, nowMs) {
 
   const timeDelta = (nowMs - prev.time) / 1000;
   const frameDelta = currentFrames - prev.frames;
-  if (timeDelta < 0.5 || timeDelta > 2.0 || frameDelta < 0 || frameDelta > 120) {
+  if (!Number.isFinite(timeDelta) || timeDelta <= 0 || timeDelta > 20 || frameDelta < 0) {
     return prev.fps || 0;
+  }
+  if (frameDelta === 0) {
+    // SRS stats may be bursty; keep last fps briefly instead of snapping to zero.
+    return timeDelta <= 4 ? (prev.fps || 0) : 0;
   }
 
   let measuredFps = frameDelta / timeDelta;
+  if (!Number.isFinite(measuredFps) || measuredFps <= 0 || measuredFps > 120) {
+    return prev.fps || 0;
+  }
   const prevFps = prev.fps || 0;
-  if (prevFps > 0) {
-    // Limit step changes to avoid poll jitter causing large FPS spikes.
-    const maxStep = Math.max(1, prevFps * 0.12);
-    measuredFps = Math.max(prevFps - maxStep, Math.min(prevFps + maxStep, measuredFps));
-    measuredFps = prevFps * 0.85 + measuredFps * 0.15;
+  if (prevFps > 0 && prevFps >= 1) {
+    // Smooth for stability while still tracking real changes.
+    const alpha = timeDelta > 2.5 ? 0.55 : 0.35;
+    measuredFps = prevFps * (1 - alpha) + measuredFps * alpha;
   }
 
   return Math.round(measuredFps * 10) / 10;
@@ -79,6 +86,9 @@ async function fetchSrsStreams() {
 }
 
 async function syncOnce() {
+  if (syncInFlight) return;
+  syncInFlight = true;
+  try {
   const streams = await fetchSrsStreams();
   if (!streams) return;
 
@@ -218,6 +228,9 @@ async function syncOnce() {
       console.log(`[SRS Sync] Active=${activeStreams.size}`);
     }
     lastSummaryLogAt = now;
+  }
+  } finally {
+    syncInFlight = false;
   }
 }
 

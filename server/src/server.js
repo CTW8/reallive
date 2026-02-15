@@ -4,6 +4,8 @@ const app = require('./app');
 const config = require('./config');
 const initSignaling = require('./signaling');
 const { startSrsSync } = require('./services/srsSync');
+const { setSeiEventEmitter } = require('./services/seiMonitor');
+const Camera = require('./models/camera');
 
 const server = http.createServer(app);
 
@@ -15,6 +17,19 @@ const io = new Server(server, {
 
 // Initialize camera status signaling
 initSignaling(io);
+
+setSeiEventEmitter((streamKey, event) => {
+  const camera = Camera.findByStreamKey(streamKey);
+  if (!camera) return;
+  io.to(`dashboard-${camera.user_id}`).emit('activity-event', {
+    type: event.type,
+    cameraId: camera.id,
+    cameraName: camera.name,
+    timestamp: new Date(event.ts || Date.now()).toISOString(),
+    score: event.score,
+    bbox: event.bbox || null,
+  });
+});
 
 // Start SRS stream status sync (polls SRS API to detect active streams)
 startSrsSync(io);

@@ -5,6 +5,7 @@ import { useCameraStore } from '../stores/camera.js'
 import { useDashboardStore } from '../stores/dashboard.js'
 import { useAuthStore } from '../stores/auth.js'
 import { connectSignaling } from '../api/signaling.js'
+import { cameraApi } from '../api/index.js'
 
 import DashboardHeader from '../components/dashboard/DashboardHeader.vue'
 import StatsBar from '../components/dashboard/StatsBar.vue'
@@ -29,6 +30,13 @@ let socket = null
 let refreshInterval = null
 
 const streamingCount = computed(() => dashboardStore.stats.cameras?.streaming || 0)
+const camerasWithEventState = computed(() => {
+  const states = dashboardStore.cameraEventStates || {}
+  return cameraStore.cameras.map((camera) => ({
+    ...camera,
+    personEventState: states[camera.id] || { unread: 0, total: 0, lastTimestamp: null },
+  }))
+})
 
 onMounted(async () => {
   await dashboardStore.fetchHealth()
@@ -46,6 +54,7 @@ onMounted(async () => {
 
   dashboardStore.fetchStats()
   dashboardStore.fetchRecentSessions()
+  await hydrateCameraEventCounts()
 
   try {
     socket = connectSignaling(auth.token)
@@ -88,10 +97,12 @@ onBeforeUnmount(() => {
 })
 
 function handleWatch(camera) {
+  dashboardStore.clearCameraUnread(camera.id)
   router.push(`/watch/${camera.id}`)
 }
 
 function handleDetails(camera) {
+  dashboardStore.clearCameraUnread(camera.id)
   detailTarget.value = camera
 }
 
@@ -109,13 +120,34 @@ function handleDelete(camera) {
 async function onCameraAdded() {
   showAddModal.value = false
   await cameraStore.fetchCameras()
+  await hydrateCameraEventCounts()
   dashboardStore.fetchStats()
 }
 
 async function onCameraSaved() {
   editTarget.value = null
   await cameraStore.fetchCameras()
+  await hydrateCameraEventCounts()
   dashboardStore.fetchStats()
+}
+
+async function hydrateCameraEventCounts() {
+  const cameras = cameraStore.cameras || []
+  if (!cameras.length) return
+
+  const tasks = cameras.map(async (camera) => {
+    try {
+      const overview = await cameraApi.getHistoryOverview(camera.id)
+      if (!overview) return
+      dashboardStore.setCameraEventTotal(
+        camera.id,
+        Number(overview.eventCount || 0),
+        null
+      )
+    } catch {
+    }
+  })
+  await Promise.all(tasks)
 }
 </script>
 
@@ -146,9 +178,10 @@ async function onCameraSaved() {
 
         <div v-else class="camera-grid">
           <CameraCardEnhanced
-            v-for="camera in cameraStore.cameras"
+            v-for="camera in camerasWithEventState"
             :key="camera.id"
             :camera="camera"
+            :event-state="camera.personEventState"
             @watch="handleWatch"
             @details="handleDetails"
             @edit="handleEdit"

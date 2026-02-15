@@ -4,6 +4,10 @@ import mpegts from 'mpegts.js'
 
 const props = defineProps({
   camera: { type: Object, required: true },
+  eventState: {
+    type: Object,
+    default: () => ({ unread: 0, total: 0, lastTimestamp: null }),
+  },
 })
 
 const emit = defineEmits(['watch', 'details', 'edit', 'delete'])
@@ -30,6 +34,23 @@ const dotClass = computed(() => {
 
 const statusBadgeClass = computed(() => {
   return `status-badge status-${props.camera.status || 'offline'}`
+})
+
+const personUnread = computed(() => Number(props.eventState?.unread || 0))
+const personTotal = computed(() => Number(props.eventState?.total || 0))
+
+const personLastLabel = computed(() => {
+  const raw = props.eventState?.lastTimestamp
+  if (!raw) return ''
+  const ts = new Date(raw).getTime()
+  if (!Number.isFinite(ts)) return ''
+  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000))
+  if (diffSec < 60) return 'just now'
+  const mins = Math.floor(diffSec / 60)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
 })
 
 function createPlayer() {
@@ -136,9 +157,15 @@ onBeforeUnmount(() => {
           <span class="camera-name">{{ camera.name }}</span>
         </div>
         <div class="info-badges">
+          <span v-if="personTotal > 0" class="person-event-badge" :class="{ 'has-unread': personUnread > 0 }">
+            Person {{ personUnread > 0 ? `+${personUnread}` : personTotal }}
+          </span>
           <span :class="statusBadgeClass">{{ camera.status || 'offline' }}</span>
           <span v-if="camera.resolution" class="resolution-badge">{{ camera.resolution }}</span>
         </div>
+      </div>
+      <div v-if="personTotal > 0" class="event-meta">
+        Last person event {{ personLastLabel }}
       </div>
     </div>
 
@@ -278,6 +305,23 @@ onBeforeUnmount(() => {
   text-transform: uppercase;
 }
 
+.person-event-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.16);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.2px;
+}
+
+.person-event-badge.has-unread {
+  color: #fff;
+  background: rgba(239, 68, 68, 0.86);
+  border-color: rgba(252, 165, 165, 0.65);
+}
+
 .card-actions {
   display: flex;
   gap: 6px;
@@ -287,6 +331,12 @@ onBeforeUnmount(() => {
 
 .card-actions .btn {
   flex: 1;
+}
+
+.event-meta {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
 }
 
 @keyframes pulse {

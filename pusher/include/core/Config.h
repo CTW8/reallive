@@ -25,6 +25,25 @@ struct ControlConfig {
     std::string ffmpegBin = "ffmpeg";
 };
 
+struct DetectionConfig {
+    bool enabled = true;
+    bool drawOverlay = true;
+    int intervalFrames = 2;
+    double motionRatioThreshold = 0.015;
+    int diffThreshold = 22;
+    double minBoxAreaRatio = 0.006;
+    int holdMs = 1000;
+    int eventMinIntervalMs = 1500;
+    bool useOpenCvMotion = true;
+    bool useTfliteSsd = true;
+    bool inferOnMotionOnly = true;
+    std::string tfliteModelPath = "./models/detect.tflite";
+    std::string tfliteLabelPath = "./models/labels.txt";
+    int tfliteInputSize = 320;
+    double personScoreThreshold = 0.55;
+    int inferMinIntervalMs = 220;
+};
+
 struct PusherConfig {
     StreamConfig stream;
     CaptureConfig camera;
@@ -32,6 +51,7 @@ struct PusherConfig {
     EncoderConfig encoder;
     RecordConfig record;
     ControlConfig control;
+    DetectionConfig detection;
     bool enableAudio = false;
 };
 

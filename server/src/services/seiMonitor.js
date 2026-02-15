@@ -1,6 +1,7 @@
 const FLV_BASE_URL = process.env.SRS_FLV_BASE || 'http://localhost:8080';
 const RECONNECT_DELAY_MS = 1500;
 const TELEMETRY_HISTORY_LIMIT = 120;
+const PERSON_EVENTS_LIMIT = 200;
 const SEI_CACHE_STALE_MS = Math.max(1000, Number(process.env.SEI_CACHE_STALE_MS || 300000));
 
 const TELEMETRY_SEI_UUID = Buffer.from([
@@ -10,6 +11,7 @@ const TELEMETRY_SEI_UUID = Buffer.from([
 
 const monitors = new Map();
 const seiCache = new Map();
+let seiEventEmitter = null;
 
 function toFiniteNumber(value, fallback = null) {
   const n = Number(value);
@@ -24,14 +26,59 @@ function clampPercent(value) {
 }
 
 function normalizeTelemetry(device = {}) {
+  const cpuCorePctRaw = Array.isArray(device.cpu_core_pct) ? device.cpu_core_pct : [];
+  const cpuCorePct = cpuCorePctRaw
+    .map((value) => clampPercent(value))
+    .filter((value) => Number.isFinite(value));
+
   return {
     cpuPct: clampPercent(device.cpu_pct),
+    cpuCorePct,
     memoryPct: clampPercent(device.mem_pct),
     storagePct: clampPercent(device.storage_pct),
     memoryUsedMb: Math.round((toFiniteNumber(device.mem_used_mb, 0) || 0) * 10) / 10,
     memoryTotalMb: Math.round((toFiniteNumber(device.mem_total_mb, 0) || 0) * 10) / 10,
     storageUsedGb: Math.round((toFiniteNumber(device.storage_used_gb, 0) || 0) * 100) / 100,
     storageTotalGb: Math.round((toFiniteNumber(device.storage_total_gb, 0) || 0) * 100) / 100,
+  };
+}
+
+function clamp01(value) {
+  const n = toFiniteNumber(value, 0);
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return Math.round(n * 1000) / 1000;
+}
+
+function normalizeBBox(bbox = {}) {
+  const x = Math.max(0, Math.floor(toFiniteNumber(bbox.x, 0) || 0));
+  const y = Math.max(0, Math.floor(toFiniteNumber(bbox.y, 0) || 0));
+  const w = Math.max(0, Math.floor(toFiniteNumber(bbox.w, 0) || 0));
+  const h = Math.max(0, Math.floor(toFiniteNumber(bbox.h, 0) || 0));
+  return { x, y, w, h };
+}
+
+function normalizePersonState(person = {}, fallbackTs) {
+  const bbox = normalizeBBox(person.bbox || {});
+  const active = Boolean(person.active) && bbox.w > 0 && bbox.h > 0;
+  return {
+    active,
+    score: clamp01(person.score),
+    ts: toFiniteNumber(person.ts, fallbackTs),
+    bbox,
+  };
+}
+
+function normalizePersonEvent(event = {}, fallbackTs) {
+  const type = String(event.type || '').toLowerCase();
+  if (type !== 'person_detected' && type !== 'person') return null;
+  const bbox = normalizeBBox(event.bbox || {});
+  if (bbox.w <= 0 || bbox.h <= 0) return null;
+  return {
+    type: 'person-detected',
+    ts: toFiniteNumber(event.ts, fallbackTs),
+    score: clamp01(event.score),
+    bbox,
   };
 }
 
@@ -259,7 +306,17 @@ function updateSeiCache(streamKey, payload) {
     telemetryHistory: [],
     cameraConfig: null,
     configurable: null,
+    person: null,
+    personEvents: [],
+    personEventDedup: new Set(),
   };
+  if (!(item.personEventDedup instanceof Set)) {
+    item.personEventDedup = new Set(
+      (item.personEvents || []).map(
+        (evt) => `${evt.type}:${evt.ts}:${evt.bbox?.x}:${evt.bbox?.y}:${evt.bbox?.w}:${evt.bbox?.h}`
+      )
+    );
+  }
 
   if (payload.device && typeof payload.device === 'object') {
     const telemetry = normalizeTelemetry(payload.device);
@@ -267,6 +324,7 @@ function updateSeiCache(streamKey, payload) {
     item.telemetryHistory.push({
       ts: toFiniteNumber(payload.ts, now),
       cpuPct: telemetry.cpuPct,
+      cpuCorePct: telemetry.cpuCorePct,
       memoryPct: telemetry.memoryPct,
       storagePct: telemetry.storagePct,
     });
@@ -283,6 +341,43 @@ function updateSeiCache(streamKey, payload) {
   }
   if (payload.configurable && typeof payload.configurable === 'object') {
     item.configurable = payload.configurable;
+  }
+
+  if (payload.person && typeof payload.person === 'object') {
+    item.person = normalizePersonState(payload.person, toFiniteNumber(payload.ts, now));
+  }
+
+  if (Array.isArray(payload.events) && payload.events.length) {
+    const emitted = [];
+    for (const rawEvent of payload.events) {
+      const evt = normalizePersonEvent(rawEvent, toFiniteNumber(payload.ts, now));
+      if (!evt) continue;
+      const dedupKey = `${evt.type}:${evt.ts}:${evt.bbox.x}:${evt.bbox.y}:${evt.bbox.w}:${evt.bbox.h}`;
+      if (item.personEventDedup.has(dedupKey)) continue;
+      item.personEventDedup.add(dedupKey);
+      item.personEvents.push(evt);
+      emitted.push(evt);
+    }
+
+    if (item.personEvents.length > PERSON_EVENTS_LIMIT) {
+      item.personEvents.splice(0, item.personEvents.length - PERSON_EVENTS_LIMIT);
+    }
+    if (item.personEventDedup.size > PERSON_EVENTS_LIMIT * 3) {
+      const keep = new Set(
+        item.personEvents.map((evt) => `${evt.type}:${evt.ts}:${evt.bbox.x}:${evt.bbox.y}:${evt.bbox.w}:${evt.bbox.h}`)
+      );
+      item.personEventDedup = keep;
+    }
+
+    if (emitted.length && typeof seiEventEmitter === 'function') {
+      for (const evt of emitted) {
+        try {
+          seiEventEmitter(streamKey, evt);
+        } catch (err) {
+          console.error('[SEI Monitor] event emit failed:', err?.message || err);
+        }
+      }
+    }
   }
 
   item.updatedAt = now;
@@ -357,6 +452,10 @@ function stopAllSeiMonitors() {
   }
 }
 
+function setSeiEventEmitter(emitter) {
+  seiEventEmitter = typeof emitter === 'function' ? emitter : null;
+}
+
 function getSeiInfo(streamKey) {
   const value = seiCache.get(streamKey);
   if (!value) return null;
@@ -366,10 +465,23 @@ function getSeiInfo(streamKey) {
   }
   return {
     updatedAt: value.updatedAt,
-    telemetry: value.telemetry ? { ...value.telemetry } : null,
-    telemetryHistory: value.telemetryHistory.slice(),
+    telemetry: value.telemetry
+      ? {
+          ...value.telemetry,
+          cpuCorePct: Array.isArray(value.telemetry.cpuCorePct) ? value.telemetry.cpuCorePct.slice() : [],
+        }
+      : null,
+    telemetryHistory: value.telemetryHistory.map((item) => ({
+      ...item,
+      cpuCorePct: Array.isArray(item.cpuCorePct) ? item.cpuCorePct.slice() : [],
+    })),
     cameraConfig: value.cameraConfig ? { ...value.cameraConfig } : null,
     configurable: value.configurable ? { ...value.configurable } : null,
+    person: value.person ? { ...value.person, bbox: { ...(value.person.bbox || {}) } } : null,
+    personEvents: value.personEvents.slice(-50).map((evt) => ({
+      ...evt,
+      bbox: { ...(evt.bbox || {}) },
+    })),
   };
 }
 
@@ -377,5 +489,6 @@ module.exports = {
   startSeiMonitor,
   stopSeiMonitor,
   stopAllSeiMonitors,
+  setSeiEventEmitter,
   getSeiInfo,
 };
