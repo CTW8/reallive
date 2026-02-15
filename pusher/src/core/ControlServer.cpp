@@ -1,4 +1,5 @@
 #include "core/ControlServer.h"
+#include "core/Pipeline.h"
 
 #include <algorithm>
 #include <array>
@@ -162,8 +163,8 @@ int64_t toInt64(const std::string& s, int64_t fallback) {
 
 } // namespace
 
-ControlServer::ControlServer(const PusherConfig& config)
-    : config_(config) {
+ControlServer::ControlServer(const PusherConfig& config, Pipeline* pipeline)
+    : config_(config), pipeline_(pipeline) {
 }
 
 ControlServer::~ControlServer() {
@@ -358,8 +359,72 @@ std::string ControlServer::handleRequest(
         return handleReplayStop(streamKey, sessionId);
     }
 
+    if (method == "GET" && path == "/api/runtime/status") {
+        return handleRuntimeStatus();
+    }
+
+    if (method == "POST" && path == "/api/runtime/live") {
+        return handleRuntimeLive(body, statusCode);
+    }
+
     statusCode = 404;
     return "{\"error\":\"not found\"}";
+}
+
+std::string ControlServer::handleRuntimeStatus() {
+    const bool running = pipeline_ ? pipeline_->isRunning() : false;
+    const bool desiredLive = pipeline_ ? pipeline_->isLivePushEnabled() : false;
+    const bool activeLive = pipeline_ ? pipeline_->isLivePushActive() : false;
+
+    std::ostringstream oss;
+    oss << "{"
+        << "\"ok\":true,"
+        << "\"stream_key\":" << jsonString(config_.stream.streamKey) << ","
+        << "\"running\":" << (running ? "true" : "false") << ","
+        << "\"desired_live\":" << (desiredLive ? "true" : "false") << ","
+        << "\"active_live\":" << (activeLive ? "true" : "false")
+        << "}";
+    return oss.str();
+}
+
+std::string ControlServer::handleRuntimeLive(const std::string& body, int& statusCode) {
+    if (!pipeline_) {
+        statusCode = 500;
+        return "{\"ok\":false,\"error\":\"pipeline unavailable\"}";
+    }
+
+    std::string streamKey = jsonExtractRaw(body, "stream_key");
+    if (streamKey.empty()) streamKey = jsonExtractRaw(body, "streamKey");
+    if (!streamKey.empty() && streamKey != config_.stream.streamKey) {
+        statusCode = 400;
+        return "{\"ok\":false,\"error\":\"stream_key mismatch\"}";
+    }
+
+    std::string enableRaw = jsonExtractRaw(body, "enable");
+    if (enableRaw.empty()) enableRaw = jsonExtractRaw(body, "live");
+    if (enableRaw.empty()) {
+        statusCode = 400;
+        return "{\"ok\":false,\"error\":\"enable required\"}";
+    }
+
+    std::string val = trim(enableRaw);
+    std::transform(val.begin(), val.end(), val.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const bool enable = (val == "1" || val == "true" || val == "yes" || val == "on");
+
+    const bool ok = pipeline_->setLivePushEnabled(enable);
+    const bool running = pipeline_->isRunning();
+    const bool desiredLive = pipeline_->isLivePushEnabled();
+    const bool activeLive = pipeline_->isLivePushActive();
+
+    std::ostringstream oss;
+    oss << "{"
+        << "\"ok\":" << (ok ? "true" : "false") << ","
+        << "\"running\":" << (running ? "true" : "false") << ","
+        << "\"desired_live\":" << (desiredLive ? "true" : "false") << ","
+        << "\"active_live\":" << (activeLive ? "true" : "false")
+        << "}";
+    return oss.str();
 }
 
 std::vector<ControlServer::Segment> ControlServer::loadSegments(const std::string& streamKey) const {

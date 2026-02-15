@@ -79,6 +79,24 @@ export const cameraApi = {
   getStreamInfo(id) {
     return request(`/cameras/${id}/stream`)
   },
+  startWatchSession(id) {
+    return request(`/cameras/${id}/watch/start`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  },
+  heartbeatWatchSession(id, sessionId) {
+    return request(`/cameras/${id}/watch/heartbeat`, {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    })
+  },
+  stopWatchSession(id, sessionId) {
+    return request(`/cameras/${id}/watch/stop`, {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    })
+  },
   getHistoryOverview(id) {
     return request(`/cameras/${id}/history/overview`)
   },

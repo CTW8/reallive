@@ -3,6 +3,8 @@ const RECONNECT_DELAY_MS = 1500;
 const TELEMETRY_HISTORY_LIMIT = 120;
 const PERSON_EVENTS_LIMIT = 200;
 const SEI_CACHE_STALE_MS = Math.max(1000, Number(process.env.SEI_CACHE_STALE_MS || 300000));
+const EPOCH_MS_MIN = 946684800000;   // 2000-01-01
+const EPOCH_MS_MAX = 4102444800000;  // 2100-01-01
 
 const TELEMETRY_SEI_UUID = Buffer.from([
   0x52, 0x65, 0x61, 0x4c, 0x69, 0x76, 0x65, 0x53,
@@ -50,6 +52,16 @@ function clamp01(value) {
   return Math.round(n * 1000) / 1000;
 }
 
+function normalizeTimestampMs(value, fallbackTs) {
+  const n = toFiniteNumber(value, null);
+  if (!Number.isFinite(n) || n <= 0) return fallbackTs;
+  if (n >= EPOCH_MS_MIN && n <= EPOCH_MS_MAX) return Math.floor(n); // ms
+  if (n >= EPOCH_MS_MIN / 1000 && n <= EPOCH_MS_MAX / 1000) return Math.floor(n * 1000); // s
+  if (n >= EPOCH_MS_MIN * 1000 && n <= EPOCH_MS_MAX * 1000) return Math.floor(n / 1000); // us
+  if (n >= EPOCH_MS_MIN * 1000000 && n <= EPOCH_MS_MAX * 1000000) return Math.floor(n / 1000000); // ns
+  return fallbackTs;
+}
+
 function normalizeBBox(bbox = {}) {
   const x = Math.max(0, Math.floor(toFiniteNumber(bbox.x, 0) || 0));
   const y = Math.max(0, Math.floor(toFiniteNumber(bbox.y, 0) || 0));
@@ -64,7 +76,7 @@ function normalizePersonState(person = {}, fallbackTs) {
   return {
     active,
     score: clamp01(person.score),
-    ts: toFiniteNumber(person.ts, fallbackTs),
+    ts: normalizeTimestampMs(person.ts, fallbackTs),
     bbox,
   };
 }
@@ -76,7 +88,7 @@ function normalizePersonEvent(event = {}, fallbackTs) {
   if (bbox.w <= 0 || bbox.h <= 0) return null;
   return {
     type: 'person-detected',
-    ts: toFiniteNumber(event.ts, fallbackTs),
+    ts: normalizeTimestampMs(event.ts, fallbackTs),
     score: clamp01(event.score),
     bbox,
   };
@@ -318,11 +330,13 @@ function updateSeiCache(streamKey, payload) {
     );
   }
 
+  const payloadTs = normalizeTimestampMs(payload?.ts, now);
+
   if (payload.device && typeof payload.device === 'object') {
     const telemetry = normalizeTelemetry(payload.device);
     item.telemetry = telemetry;
     item.telemetryHistory.push({
-      ts: toFiniteNumber(payload.ts, now),
+      ts: payloadTs,
       cpuPct: telemetry.cpuPct,
       cpuCorePct: telemetry.cpuCorePct,
       memoryPct: telemetry.memoryPct,
@@ -344,13 +358,13 @@ function updateSeiCache(streamKey, payload) {
   }
 
   if (payload.person && typeof payload.person === 'object') {
-    item.person = normalizePersonState(payload.person, toFiniteNumber(payload.ts, now));
+    item.person = normalizePersonState(payload.person, payloadTs);
   }
 
   if (Array.isArray(payload.events) && payload.events.length) {
     const emitted = [];
     for (const rawEvent of payload.events) {
-      const evt = normalizePersonEvent(rawEvent, toFiniteNumber(payload.ts, now));
+      const evt = normalizePersonEvent(rawEvent, payloadTs);
       if (!evt) continue;
       const dedupKey = `${evt.type}:${evt.ts}:${evt.bbox.x}:${evt.bbox.y}:${evt.bbox.w}:${evt.bbox.h}`;
       if (item.personEventDedup.has(dedupKey)) continue;

@@ -109,6 +109,17 @@ Config::Config() {
     config_.detection.tfliteInputSize = 320;
     config_.detection.personScoreThreshold = 0.55;
     config_.detection.inferMinIntervalMs = 220;
+    config_.mqtt.enabled = false;
+    config_.mqtt.host = "127.0.0.1";
+    config_.mqtt.port = 1883;
+    config_.mqtt.clientId = "";
+    config_.mqtt.username = "";
+    config_.mqtt.password = "";
+    config_.mqtt.topicPrefix = "reallive/device";
+    config_.mqtt.keepaliveSec = 30;
+    config_.mqtt.commandQos = 1;
+    config_.mqtt.stateQos = 0;
+    config_.mqtt.stateIntervalMs = 1000;
     config_.enableAudio = false;
 }
 
@@ -263,12 +274,47 @@ bool Config::parseJson(const std::string& jsonStr) {
         if (!labelPath.empty()) config_.detection.tfliteLabelPath = labelPath;
     }
 
+    config_.mqtt.enabled = jsonBool(jsonStr, "mqtt_enable", config_.mqtt.enabled);
+    {
+        const std::string mqttHost = jsonValue(jsonStr, "mqtt_host");
+        if (!mqttHost.empty()) config_.mqtt.host = mqttHost;
+    }
+    {
+        const int mqttPort = jsonInt(jsonStr, "mqtt_port", 0);
+        if (mqttPort > 0) config_.mqtt.port = mqttPort;
+    }
+    {
+        const std::string mqttClientId = jsonValue(jsonStr, "mqtt_client_id");
+        if (!mqttClientId.empty()) config_.mqtt.clientId = mqttClientId;
+    }
+    {
+        const std::string mqttUsername = jsonValue(jsonStr, "mqtt_username");
+        if (!mqttUsername.empty()) config_.mqtt.username = mqttUsername;
+    }
+    {
+        const std::string mqttPassword = jsonValue(jsonStr, "mqtt_password");
+        if (!mqttPassword.empty()) config_.mqtt.password = mqttPassword;
+    }
+    {
+        const std::string mqttTopicPrefix = jsonValue(jsonStr, "mqtt_topic_prefix");
+        if (!mqttTopicPrefix.empty()) config_.mqtt.topicPrefix = mqttTopicPrefix;
+    }
+    config_.mqtt.keepaliveSec = std::max(
+        5, jsonInt(jsonStr, "mqtt_keepalive_sec", config_.mqtt.keepaliveSec));
+    config_.mqtt.commandQos = std::max(
+        0, std::min(2, jsonInt(jsonStr, "mqtt_command_qos", config_.mqtt.commandQos)));
+    config_.mqtt.stateQos = std::max(
+        0, std::min(2, jsonInt(jsonStr, "mqtt_state_qos", config_.mqtt.stateQos)));
+    config_.mqtt.stateIntervalMs = std::max(
+        200, jsonInt(jsonStr, "mqtt_state_interval_ms", config_.mqtt.stateIntervalMs));
+
     std::cout << "[Config] Loaded: " << config_.stream.url
               << " " << config_.camera.width << "x" << config_.camera.height
               << "@" << config_.camera.fps << "fps"
               << " bitrate=" << config_.encoder.bitrate
               << " record=" << (config_.record.enabled ? "on" : "off")
               << " control=" << (config_.control.enabled ? "on" : "off")
+              << " mqtt=" << (config_.mqtt.enabled ? "on" : "off")
               << " detect=" << (config_.detection.enabled ? "on" : "off")
               << std::endl;
 

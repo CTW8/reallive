@@ -30,12 +30,25 @@ const RECORDINGS_ROOTS = (() => {
 const RECORDINGS_ROOT = RECORDINGS_ROOTS[0];
 const DEFAULT_SEGMENT_MS = Number(process.env.HISTORY_DEFAULT_SEGMENT_MS || 60000);
 const CACHE_TTL_MS = Number(process.env.HISTORY_CACHE_TTL_MS || 2000);
+const EPOCH_MS_MIN = 946684800000;   // 2000-01-01
+const EPOCH_MS_MAX = 4102444800000;  // 2100-01-01
 
 const cache = new Map();
+const relativeAlignStateByStream = new Map();
 
 function ensureNumber(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeTimestampMs(value, fallback) {
+  const n = ensureNumber(value, null);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  if (n >= EPOCH_MS_MIN && n <= EPOCH_MS_MAX) return Math.floor(n); // ms
+  if (n >= EPOCH_MS_MIN / 1000 && n <= EPOCH_MS_MAX / 1000) return Math.floor(n * 1000); // s
+  if (n >= EPOCH_MS_MIN * 1000 && n <= EPOCH_MS_MAX * 1000) return Math.floor(n / 1000); // us
+  if (n >= EPOCH_MS_MIN * 1000000 && n <= EPOCH_MS_MAX * 1000000) return Math.floor(n / 1000000); // ns
+  return fallback;
 }
 
 function isVideoFile(name) {
@@ -132,13 +145,14 @@ function readEventLog(streamDir, out) {
     } catch {
       continue;
     }
-    const ts = ensureNumber(parsed.ts, null);
-    if (!Number.isFinite(ts)) continue;
+    const rawTs = ensureNumber(parsed.ts, null);
+    if (!Number.isFinite(rawTs)) continue;
+    const normalizedTs = normalizeTimestampMs(rawTs, null);
     const type = String(parsed.type || '').toLowerCase();
     if (type !== 'person') continue;
     const bbox = parsed.bbox && typeof parsed.bbox === 'object' ? parsed.bbox : {};
     const event = {
-      ts: Math.floor(ts),
+      ts: Number.isFinite(normalizedTs) ? normalizedTs : Math.floor(rawTs),
       type: 'person-detected',
       score: ensureNumber(parsed.score, 0),
       bbox: {
@@ -147,8 +161,115 @@ function readEventLog(streamDir, out) {
         w: Math.max(0, Math.floor(ensureNumber(bbox.w, 0))),
         h: Math.max(0, Math.floor(ensureNumber(bbox.h, 0))),
       },
+      _relativeTs: !Number.isFinite(normalizedTs),
     };
     out.push(event);
+  }
+}
+
+function alignRelativeEventTimestamps(streamKey, events, segments) {
+  if (!events.length) return;
+  const relativeIndexes = [];
+  for (let i = 0; i < events.length; i += 1) {
+    const evt = events[i];
+    if (evt && evt._relativeTs && Number.isFinite(evt.ts)) {
+      relativeIndexes.push(i);
+    }
+  }
+  if (!relativeIndexes.length) {
+    relativeAlignStateByStream.delete(String(streamKey || ''));
+    for (const evt of events) {
+      if (evt && Object.prototype.hasOwnProperty.call(evt, '_relativeTs')) {
+        delete evt._relativeTs;
+      }
+    }
+    return;
+  }
+
+  if (segments.length) {
+    const stateKey = String(streamKey || '');
+    const state = relativeAlignStateByStream.get(stateKey) || { offsets: new Map() };
+    const latestSegment = segments[segments.length - 1] || null;
+    const latestEndMs = Number(latestSegment?.endMs || 0);
+    const earliestStartMs = Number(segments[0]?.startMs || 0);
+    if (Number.isFinite(latestEndMs) && latestEndMs > 0) {
+      let stableAnchorEnd = latestEndMs;
+      if (latestSegment?.isOpen) {
+        const closedSegment = [...segments].reverse().find((seg) => !seg?.isOpen);
+        stableAnchorEnd = Number(closedSegment?.endMs || segments[0]?.startMs || latestEndMs);
+      }
+
+      // Split into monotonic blocks, so timestamp resets (after process restart)
+      // are handled independently instead of corrupting the latest block.
+      const blocks = [];
+      let current = [relativeIndexes[0]];
+      let prevTs = Number(events[relativeIndexes[0]].ts || 0);
+      for (let i = 1; i < relativeIndexes.length; i += 1) {
+        const idx = relativeIndexes[i];
+        const ts = Number(events[idx].ts || 0);
+        if (!Number.isFinite(ts) || ts < prevTs) {
+          blocks.push(current);
+          current = [idx];
+        } else {
+          current.push(idx);
+        }
+        prevTs = ts;
+      }
+      blocks.push(current);
+
+      let anchorEnd = stableAnchorEnd;
+      for (let bi = blocks.length - 1; bi >= 0; bi -= 1) {
+        const block = blocks[bi];
+        let blockMin = Number.POSITIVE_INFINITY;
+        let blockMax = Number.NEGATIVE_INFINITY;
+        for (const idx of block) {
+          const ts = Number(events[idx].ts || 0);
+          if (!Number.isFinite(ts)) continue;
+          if (ts < blockMin) blockMin = ts;
+          if (ts > blockMax) blockMax = ts;
+        }
+        if (!Number.isFinite(blockMin) || !Number.isFinite(blockMax) || blockMax <= 0) {
+          continue;
+        }
+
+        const blockKey = `${block.length}:${Math.floor(blockMin)}:${Math.floor(blockMax)}`;
+        let offsetMs = state.offsets.get(blockKey);
+        if (!Number.isFinite(offsetMs)) {
+          offsetMs = anchorEnd - blockMax;
+          state.offsets.set(blockKey, offsetMs);
+        }
+        for (const idx of block) {
+          const raw = Number(events[idx].ts || 0);
+          if (!Number.isFinite(raw)) continue;
+          events[idx].ts = Math.floor(raw + offsetMs);
+        }
+
+        const blockStartAbs = blockMin + offsetMs;
+        anchorEnd = Math.max(earliestStartMs, Math.floor(blockStartAbs - 1000));
+      }
+
+      const hardMin = earliestStartMs > 0 ? (earliestStartMs - 24 * 3600 * 1000) : Number.NEGATIVE_INFINITY;
+      const hardMax = latestEndMs + 5 * 60 * 1000;
+      for (const idx of relativeIndexes) {
+        const evt = events[idx];
+        if (!evt) continue;
+        if (!Number.isFinite(evt.ts)) continue;
+        if (evt.ts < hardMin) evt.ts = hardMin;
+        if (evt.ts > hardMax) evt.ts = hardMax;
+      }
+    }
+    relativeAlignStateByStream.set(stateKey, state);
+    if (relativeAlignStateByStream.size > 128) {
+      const firstKey = relativeAlignStateByStream.keys().next().value;
+      if (firstKey !== undefined) {
+        relativeAlignStateByStream.delete(firstKey);
+      }
+    }
+  }
+  for (const evt of events) {
+    if (evt && Object.prototype.hasOwnProperty.call(evt, '_relativeTs')) {
+      delete evt._relativeTs;
+    }
   }
 }
 
@@ -222,10 +343,12 @@ function buildSegments(streamKey) {
   });
 
   if (!segments.length) {
+    alignRelativeEventTimestamps(streamKey, events, segments);
     return { segments: [], events };
   }
 
   segments.sort((a, b) => a.startMs - b.startMs);
+  alignRelativeEventTimestamps(streamKey, events, segments);
   events.sort((a, b) => a.ts - b.ts);
   return { segments, events };
 }
@@ -396,10 +519,21 @@ function getPlayback(streamKey, query = {}) {
   };
 }
 
+function getLatestThumbnail(streamKey) {
+  const segments = loadSegments(streamKey).segments;
+  if (!segments.length) return null;
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    const seg = segments[i];
+    if (seg?.thumbnailUrl) return seg.thumbnailUrl;
+  }
+  return null;
+}
+
 module.exports = {
   RECORDINGS_ROOT,
   RECORDINGS_ROOTS,
   getHistoryOverview,
   getTimeline,
   getPlayback,
+  getLatestThumbnail,
 };

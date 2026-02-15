@@ -1,5 +1,6 @@
 #include "core/Config.h"
 #include "core/ControlServer.h"
+#include "core/MqttRuntimeClient.h"
 #include "core/Pipeline.h"
 
 #include <csignal>
@@ -12,6 +13,7 @@ namespace {
 
 Pipeline* g_pipeline = nullptr;
 ControlServer* g_controlServer = nullptr;
+MqttRuntimeClient* g_mqttClient = nullptr;
 
 void signalHandler(int sig) {
     std::cout << "\n[Main] Signal " << sig << " received, stopping..." << std::endl;
@@ -20,6 +22,9 @@ void signalHandler(int sig) {
     }
     if (g_controlServer) {
         g_controlServer->stop();
+    }
+    if (g_mqttClient) {
+        g_mqttClient->stop();
     }
 }
 
@@ -41,8 +46,10 @@ int main(int argc, char* argv[]) {
     // Create and run pipeline
     Pipeline pipeline;
     g_pipeline = &pipeline;
-    ControlServer controlServer(config.get());
+    ControlServer controlServer(config.get(), &pipeline);
     g_controlServer = &controlServer;
+    MqttRuntimeClient mqttClient(config.get(), &pipeline);
+    g_mqttClient = &mqttClient;
 
     if (!controlServer.start()) {
         std::cerr << "[Main] Failed to start control server." << std::endl;
@@ -58,6 +65,10 @@ int main(int argc, char* argv[]) {
         std::cerr << "[Main] Failed to start pipeline." << std::endl;
         return 1;
     }
+    if (!mqttClient.start()) {
+        std::cerr << "[Main] Failed to start MQTT runtime client." << std::endl;
+        return 1;
+    }
 
     std::cout << "[Main] Pipeline running. Press Ctrl+C to stop." << std::endl;
 
@@ -67,9 +78,11 @@ int main(int argc, char* argv[]) {
     }
 
     pipeline.stop();
+    mqttClient.stop();
     controlServer.stop();
     g_pipeline = nullptr;
     g_controlServer = nullptr;
+    g_mqttClient = nullptr;
 
     std::cout << "[Main] Exiting." << std::endl;
     return 0;

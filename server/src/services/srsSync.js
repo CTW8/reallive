@@ -2,6 +2,7 @@ const Camera = require('../models/camera');
 const Session = require('../models/session');
 const config = require('../config');
 const { startSeiMonitor, stopSeiMonitor, stopAllSeiMonitors } = require('./seiMonitor');
+const { getDeviceState } = require('./mqttControlService');
 
 const SRS_API = config.srsApi || 'http://localhost:1985';
 const POLL_INTERVAL = 1000; // 1 second (reduced from 5s for lower latency)
@@ -187,23 +188,37 @@ async function syncOnce() {
       missingPolls.delete(streamKey);
 
       const camera = Camera.findByStreamKey(streamKey);
-      if (camera && camera.status === 'streaming') {
-        Camera.updateStatus(camera.id, 'offline');
-        Session.endActiveSessionsForCamera(camera.id);
+      if (camera) {
+        const runtime = getDeviceState(streamKey);
+        const nextStatus = runtime
+          ? (runtime.activeLive ? 'streaming' : 'online')
+          : 'offline';
+        const prevStatus = String(camera.status || 'offline');
+        if (prevStatus !== nextStatus) {
+          Camera.updateStatus(camera.id, nextStatus);
+        }
+        if (nextStatus !== 'streaming') {
+          Session.endActiveSessionsForCamera(camera.id);
+        }
 
         if (io) {
           io.to(`dashboard-${camera.user_id}`).emit('camera-status', {
             cameraId: camera.id,
-            status: 'offline',
+            status: nextStatus,
+            runtime: runtime || null,
           });
-          io.to(`dashboard-${camera.user_id}`).emit('activity-event', {
-            type: 'stream-stop',
-            cameraId: camera.id,
-            cameraName: camera.name,
-            timestamp: new Date().toISOString(),
-          });
+          if (prevStatus === 'streaming' && nextStatus !== 'streaming') {
+            io.to(`dashboard-${camera.user_id}`).emit('activity-event', {
+              type: 'stream-stop',
+              cameraId: camera.id,
+              cameraName: camera.name,
+              timestamp: new Date().toISOString(),
+            });
+          }
         }
-        console.log(`[SRS Sync] Camera "${camera.name}" stopped streaming`);
+        if (prevStatus === 'streaming' && nextStatus !== 'streaming') {
+          console.log(`[SRS Sync] Camera "${camera.name}" stopped streaming`);
+        }
       }
 
       // Remove cached info

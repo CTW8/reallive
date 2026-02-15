@@ -16,6 +16,18 @@ const defaults = {
     url: '',
     timeoutMs: 1500,
   },
+  mqttControl: {
+    enabled: false,
+    brokerUrl: 'mqtt://127.0.0.1:1883',
+    username: '',
+    password: '',
+    clientId: '',
+    topicPrefix: 'reallive/device',
+    commandQos: 1,
+    stateQos: 0,
+    commandRetain: true,
+    stateStaleMs: 12000,
+  },
 };
 
 function loadFileConfig(filePath) {
@@ -40,11 +52,16 @@ const mergedEdgeReplay = {
   ...defaults.edgeReplay,
   ...(fileConfig.edgeReplay || {}),
 };
+const mergedMqttControl = {
+  ...defaults.mqttControl,
+  ...(fileConfig.mqttControl || {}),
+};
 
 const config = {
   ...defaults,
   ...fileConfig,
   edgeReplay: mergedEdgeReplay,
+  mqttControl: mergedMqttControl,
 };
 
 if (process.env.PORT) config.port = toNumber(process.env.PORT, config.port);
@@ -55,6 +72,16 @@ if (process.env.EDGE_REPLAY_URL) config.edgeReplay.url = process.env.EDGE_REPLAY
 if (process.env.EDGE_REPLAY_TIMEOUT_MS) {
   config.edgeReplay.timeoutMs = toNumber(process.env.EDGE_REPLAY_TIMEOUT_MS, config.edgeReplay.timeoutMs);
 }
+if (process.env.MQTT_CONTROL_ENABLED) {
+  config.mqttControl.enabled = ['1', 'true', 'yes', 'on'].includes(
+    String(process.env.MQTT_CONTROL_ENABLED).toLowerCase()
+  );
+}
+if (process.env.MQTT_BROKER_URL) config.mqttControl.brokerUrl = process.env.MQTT_BROKER_URL;
+if (process.env.MQTT_USERNAME) config.mqttControl.username = process.env.MQTT_USERNAME;
+if (process.env.MQTT_PASSWORD) config.mqttControl.password = process.env.MQTT_PASSWORD;
+if (process.env.MQTT_CLIENT_ID) config.mqttControl.clientId = process.env.MQTT_CLIENT_ID;
+if (process.env.MQTT_TOPIC_PREFIX) config.mqttControl.topicPrefix = process.env.MQTT_TOPIC_PREFIX;
 
 if (typeof config.dbPath === 'string' && !path.isAbsolute(config.dbPath)) {
   config.dbPath = path.resolve(SERVER_ROOT, config.dbPath);

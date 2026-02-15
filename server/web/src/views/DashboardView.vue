@@ -28,6 +28,7 @@ const detailTarget = ref(null)
 
 let socket = null
 let refreshInterval = null
+let cameraRefreshInterval = null
 
 const streamingCount = computed(() => dashboardStore.stats.cameras?.streaming || 0)
 const camerasWithEventState = computed(() => {
@@ -60,15 +61,28 @@ onMounted(async () => {
     socket = connectSignaling(auth.token)
     dashboardStore.setSocketConnected(socket.connected)
 
-    socket.on('connect', () => dashboardStore.setSocketConnected(true))
+    const joinDashboardRoom = () => {
+      socket.emit('join-room', { room: `dashboard-${auth.user?.id}` })
+    }
+
+    socket.on('connect', () => {
+      dashboardStore.setSocketConnected(true)
+      joinDashboardRoom()
+    })
     socket.on('disconnect', () => dashboardStore.setSocketConnected(false))
+    if (socket.connected) {
+      joinDashboardRoom()
+    }
 
-    socket.emit('join-room', { room: `dashboard-${auth.user?.id}` })
-
-    socket.on('camera-status', ({ cameraId, status }) => {
-      cameraStore.updateCameraStatus(cameraId, status)
-      dashboardStore.fetchStats()
-      dashboardStore.fetchRecentSessions()
+    socket.on('camera-status', ({ cameraId, status, thumbnailUrl, runtime }) => {
+      const changed = cameraStore.updateCameraStatus(cameraId, status, {
+        thumbnailUrl,
+        device: runtime || null,
+      })
+      if (changed) {
+        dashboardStore.fetchStats()
+        dashboardStore.fetchRecentSessions()
+      }
     })
 
     socket.on('activity-event', (event) => {
@@ -82,11 +96,18 @@ onMounted(async () => {
     dashboardStore.fetchStats()
     dashboardStore.fetchHealth()
   }, 30000)
+
+  cameraRefreshInterval = setInterval(() => {
+    cameraStore.fetchCameras().catch(() => {})
+  }, 10000)
 })
 
 onBeforeUnmount(() => {
   if (refreshInterval) {
     clearInterval(refreshInterval)
+  }
+  if (cameraRefreshInterval) {
+    clearInterval(cameraRefreshInterval)
   }
   if (socket) {
     socket.off('camera-status')

@@ -11,9 +11,11 @@
 
 namespace reallive {
 
+class Pipeline;
+
 class ControlServer {
 public:
-    explicit ControlServer(const PusherConfig& config);
+    ControlServer(const PusherConfig& config, Pipeline* pipeline);
     ~ControlServer();
 
     bool start();
@@ -56,6 +58,8 @@ private:
     std::string handleTimeline(const std::string& streamKey, int64_t startMs, int64_t endMs);
     std::string handleReplayStart(const std::string& streamKey, int64_t tsMs);
     std::string handleReplayStop(const std::string& streamKey, const std::string& sessionId);
+    std::string handleRuntimeStatus();
+    std::string handleRuntimeLive(const std::string& body, int& statusCode);
 
     std::vector<Segment> loadSegments(const std::string& streamKey) const;
     static std::string sanitizeStreamKey(const std::string& raw);
@@ -67,6 +71,7 @@ private:
     void terminateAllSessions();
 
     PusherConfig config_;
+    Pipeline* pipeline_ = nullptr;
     std::atomic<bool> running_{false};
     int serverFd_ = -1;
     std::thread serverThread_;
@@ -75,4 +80,3 @@ private:
 };
 
 } // namespace reallive
-

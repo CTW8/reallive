@@ -145,6 +145,13 @@ onBeforeUnmount(() => {
         autoplay
         playsinline
       />
+      <img
+        v-else-if="camera.thumbnailUrl"
+        class="preview-thumbnail"
+        :src="camera.thumbnailUrl"
+        :alt="`${camera.name} thumbnail`"
+        loading="lazy"
+      />
       <div v-else class="preview-placeholder">
         <span class="placeholder-text">{{ camera.status || 'offline' }}</span>
       </div>
@@ -172,7 +179,6 @@ onBeforeUnmount(() => {
     <div class="card-actions">
       <button
         class="btn btn-primary btn-sm"
-        :disabled="isOffline"
         @click="emit('watch', camera)"
       >
         Watch
@@ -232,6 +238,16 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.preview-thumbnail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .preview-placeholder {

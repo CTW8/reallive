@@ -9,6 +9,7 @@
 #include <atomic>
 #include <thread>
 #include <memory>
+#include <mutex>
 
 namespace reallive {
 
@@ -26,6 +27,9 @@ public:
     uint64_t getFramesSent() const;
     uint64_t getBytesSent() const;
     double getCurrentFps() const;
+    bool setLivePushEnabled(bool enabled);
+    bool isLivePushEnabled() const;
+    bool isLivePushActive() const;
 
 private:
     void videoLoop();
@@ -47,6 +51,9 @@ private:
     std::atomic<uint64_t> framesSent_{0};
     std::atomic<uint64_t> bytesSent_{0};
     std::atomic<double> currentFps_{0.0};
+    std::atomic<bool> livePushDesired_{true};
+    std::atomic<bool> livePushActive_{false};
+    mutable std::mutex streamerMutex_;
 
     PusherConfig config_;
 };

@@ -115,6 +115,32 @@ int64_t wallClockMs() {
     ).count();
 }
 
+constexpr int64_t kEpochMsMin = 946684800000LL;   // 2000-01-01
+constexpr int64_t kEpochMsMax = 4102444800000LL;  // 2100-01-01
+
+int64_t normalizeTimestampEpochMs(int64_t raw, int64_t fallback) {
+    if (raw <= 0) return fallback;
+    if (raw >= kEpochMsMin && raw <= kEpochMsMax) return raw;  // ms
+    if (raw >= (kEpochMsMin / 1000LL) && raw <= (kEpochMsMax / 1000LL)) return raw * 1000LL;  // s
+    if (raw >= (kEpochMsMin * 1000LL) && raw <= (kEpochMsMax * 1000LL)) return raw / 1000LL;  // us
+    if (raw >= (kEpochMsMin * 1000000LL) && raw <= (kEpochMsMax * 1000000LL)) return raw / 1000000LL;  // ns
+    return fallback;
+}
+
+int64_t normalizeFrameTimestampMs(int64_t framePts) {
+    const int64_t fallback = wallClockMs();
+    if (framePts <= 0) return fallback;
+
+    // Most capture backends provide pts in us; keep compatibility first.
+    const int64_t usToMs = framePts / 1000LL;
+    const int64_t fromUsPath = normalizeTimestampEpochMs(usToMs, -1);
+    if (fromUsPath > 0) return fromUsPath;
+
+    const int64_t fromRaw = normalizeTimestampEpochMs(framePts, -1);
+    if (fromRaw > 0) return fromRaw;
+    return fallback;
+}
+
 double clamp01(double value) {
     if (!std::isfinite(value)) return 0.0;
     if (value < 0.0) return 0.0;
@@ -1362,6 +1388,8 @@ bool Pipeline::init(const PusherConfig& config) {
                   << config.stream.url << std::endl;
         return false;
     }
+    livePushDesired_ = true;
+    livePushActive_ = true;
     std::cout << "[Pipeline] Connected to: " << config.stream.url << std::endl;
 
     if (config_.record.enabled) {
@@ -1430,8 +1458,12 @@ void Pipeline::stop() {
     }
 
     // Stop components in reverse order
-    if (streamer_ && streamer_->isConnected()) {
-        streamer_->disconnect();
+    if (streamer_) {
+        std::lock_guard<std::mutex> lock(streamerMutex_);
+        if (streamer_->isConnected()) {
+            streamer_->disconnect();
+        }
+        livePushActive_ = false;
     }
     if (recorder_) {
         recorder_->close();
@@ -1488,7 +1520,9 @@ void Pipeline::videoLoop() {
             MotionPersonDetector personDetector(config_.detection);
             DetectionEventJournal detectionJournal;
             detectionJournal.init(config_);
-            int64_t lastPersonEventMs = 0;
+            bool personPresent = false;
+            int64_t lastPersonGoneMs = 0;
+            const int64_t personRearmMs = std::max<int64_t>(200, config_.detection.eventMinIntervalMs);
 
             while (true) {
                 Frame localFrame;
@@ -1512,15 +1546,22 @@ void Pipeline::videoLoop() {
                 {
                     std::lock_guard<std::mutex> lock(detectMutex);
                     latestPerson = person;
-                    if (person.valid &&
-                        (lastPersonEventMs <= 0 ||
-                         localTs - lastPersonEventMs >= config_.detection.eventMinIntervalMs)) {
-                        lastPersonEventMs = localTs;
-                        pendingPersonEvents.push_back(person);
-                        if (pendingPersonEvents.size() > 8) {
-                            pendingPersonEvents.erase(pendingPersonEvents.begin());
+                    if (person.valid) {
+                        const bool rearmed = (lastPersonGoneMs <= 0) ||
+                                             (localTs - lastPersonGoneMs >= personRearmMs);
+                        if (!personPresent && rearmed) {
+                            pendingPersonEvents.push_back(person);
+                            if (pendingPersonEvents.size() > 8) {
+                                pendingPersonEvents.erase(pendingPersonEvents.begin());
+                            }
+                            shouldWriteEvent = true;
                         }
-                        shouldWriteEvent = true;
+                        personPresent = true;
+                    } else {
+                        if (personPresent) {
+                            lastPersonGoneMs = localTs;
+                        }
+                        personPresent = false;
                     }
                 }
                 if (shouldWriteEvent) {
@@ -1563,18 +1604,39 @@ void Pipeline::videoLoop() {
             }
             if (packet.empty()) continue;
 
-            if (!streamer_->sendVideoPacket(packet)) {
-                std::cerr << "[Pipeline] Failed to send video packet" << std::endl;
-                if (!streamer_->isConnected()) {
-                    std::cerr << "[Pipeline] Streamer disconnected, stopping" << std::endl;
-                    running_ = false;
-                    captureCv.notify_all();
-                    detectCv.notify_all();
-                    sendCv.notify_all();
-                }
+            if (!livePushDesired_.load()) {
+                sendDropped++;
                 continue;
             }
 
+            bool sentOk = false;
+            {
+                std::lock_guard<std::mutex> streamLock(streamerMutex_);
+                if (!livePushDesired_.load()) {
+                    sendDropped++;
+                    continue;
+                }
+                if (!streamer_->isConnected()) {
+                    if (!streamer_->connect(config_.stream)) {
+                        livePushActive_ = false;
+                        std::cerr << "[Pipeline] Failed to reconnect streamer, dropping packet" << std::endl;
+                        continue;
+                    }
+                    livePushActive_ = true;
+                    std::cout << "[Pipeline] RTMP push resumed" << std::endl;
+                }
+
+                if (!streamer_->sendVideoPacket(packet)) {
+                    std::cerr << "[Pipeline] Failed to send video packet" << std::endl;
+                    if (!streamer_->isConnected()) {
+                        livePushActive_ = false;
+                    }
+                } else {
+                    sentOk = true;
+                }
+            }
+
+            if (!sentOk) continue;
             framesSent_++;
             bytesSent_ += packet.data.size();
         }
@@ -1618,7 +1680,7 @@ void Pipeline::videoLoop() {
         }
 
         auto captureTime = Clock::now();
-        const int64_t frameTsMs = (frame.pts > 0) ? (frame.pts / 1000) : wallClockMs();
+        const int64_t frameTsMs = normalizeFrameTimestampMs(frame.pts);
 
         if (config_.detection.enabled) {
             Frame frameForDetect = frame;
@@ -1831,7 +1893,32 @@ void Pipeline::audioLoop() {
             continue;
         }
 
-        if (!streamer_->sendAudioPacket(audioFrame)) {
+        if (!livePushDesired_.load()) {
+            continue;
+        }
+
+        bool sendOk = false;
+        {
+            std::lock_guard<std::mutex> streamLock(streamerMutex_);
+            if (!livePushDesired_.load()) {
+                continue;
+            }
+            if (!streamer_->isConnected()) {
+                if (streamer_->connect(config_.stream)) {
+                    livePushActive_ = true;
+                    std::cout << "[Pipeline] RTMP push resumed (audio loop)" << std::endl;
+                } else {
+                    livePushActive_ = false;
+                    continue;
+                }
+            }
+            sendOk = streamer_->sendAudioPacket(audioFrame);
+            if (!sendOk && !streamer_->isConnected()) {
+                livePushActive_ = false;
+            }
+        }
+
+        if (!sendOk) {
             std::cerr << "[Pipeline] Failed to send audio packet" << std::endl;
         }
     }
@@ -1851,6 +1938,41 @@ uint64_t Pipeline::getBytesSent() const {
 
 double Pipeline::getCurrentFps() const {
     return currentFps_;
+}
+
+bool Pipeline::setLivePushEnabled(bool enabled) {
+    livePushDesired_ = enabled;
+    if (!streamer_) return false;
+
+    std::lock_guard<std::mutex> lock(streamerMutex_);
+    if (!enabled) {
+        if (streamer_->isConnected()) {
+            streamer_->disconnect();
+        }
+        livePushActive_ = false;
+        return true;
+    }
+
+    if (!running_) {
+        return true;
+    }
+
+    if (!streamer_->isConnected()) {
+        if (!streamer_->connect(config_.stream)) {
+            livePushActive_ = false;
+            return false;
+        }
+    }
+    livePushActive_ = streamer_->isConnected();
+    return livePushActive_;
+}
+
+bool Pipeline::isLivePushEnabled() const {
+    return livePushDesired_.load();
+}
+
+bool Pipeline::isLivePushActive() const {
+    return livePushActive_.load();
 }
 
 } // namespace reallive

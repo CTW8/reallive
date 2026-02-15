@@ -2,8 +2,27 @@ const jwt = require('jsonwebtoken');
 const config = require('../config');
 const Camera = require('../models/camera');
 const Session = require('../models/session');
+const { getLatestThumbnail } = require('../services/historyService');
+const { getDeviceState } = require('../services/mqttControlService');
 
 function initSignaling(io) {
+  function emitDashboardSnapshot(socket) {
+    const cameras = Camera.findByUserId(socket.user.id);
+    for (const camera of cameras) {
+      const runtime = getDeviceState(camera.stream_key);
+      const status = runtime
+        ? (runtime.activeLive ? 'streaming' : 'online')
+        : (camera.status || 'offline');
+      const thumbnailUrl = status === 'offline' ? null : getLatestThumbnail(camera.stream_key);
+      io.to(socket.id).emit('camera-status', {
+        cameraId: camera.id,
+        status,
+        thumbnailUrl,
+        runtime: runtime || null,
+      });
+    }
+  }
+
   // Authenticate socket connections via JWT
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
@@ -28,6 +47,9 @@ function initSignaling(io) {
       if (!room) return;
       socket.join(room);
       console.log(`[signaling] ${socket.user.username} joined room ${room}`);
+      if (room === `dashboard-${socket.user.id}`) {
+        emitDashboardSnapshot(socket);
+      }
     });
 
     // Camera stream start - update status and create session

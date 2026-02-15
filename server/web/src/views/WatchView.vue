@@ -33,6 +33,7 @@ const historyError = ref('')
 const nowMs = ref(Date.now())
 const historyReplaySessionId = ref(null)
 const historyReplayTransport = ref('')
+const watchSessionId = ref('')
 const timelineZoomPct = ref(35)
 const timelineZoomAnchorMs = ref(null)
 const telemetryChartRef = ref(null)
@@ -44,6 +45,7 @@ let socket = null
 let refreshTimer = null
 let latencyTimer = null
 let historyRefreshTimer = null
+let watchHeartbeatTimer = null
 let telemetryChartInstance = null
 let telemetryCoreChartInstance = null
 let timelineZoomTimer = null
@@ -126,12 +128,20 @@ const hasHistory = computed(() => {
 const timelineEventFilter = ref('person-detected')
 const pinnedTimelineEventId = ref('')
 
+function normalizeEventType(type) {
+  const normalized = String(type || '').trim().toLowerCase()
+  if (normalized === 'person' || normalized === 'person_detected' || normalized === 'person-detected') {
+    return 'person-detected'
+  }
+  return normalized || 'event'
+}
+
 const timelineAllEvents = computed(() => {
   const timelineEvents = Array.isArray(historyTimeline.value?.events) ? historyTimeline.value.events : []
   const seiEventsRaw = Array.isArray(streamInfo.value?.sei?.personEvents) ? streamInfo.value.sei.personEvents : []
   const seiEvents = seiEventsRaw.map((evt) => ({
     ...evt,
-    type: evt?.type || 'person-detected',
+    type: normalizeEventType(evt?.type),
   }))
 
   const merged = [...timelineEvents, ...seiEvents]
@@ -141,7 +151,7 @@ const timelineAllEvents = computed(() => {
     if (!evt) continue
     const ts = Number(evt.ts)
     if (!Number.isFinite(ts)) continue
-    const type = String(evt.type || 'event')
+    const type = normalizeEventType(evt.type)
     const bbox = evt.bbox && typeof evt.bbox === 'object' ? evt.bbox : {}
     const x = Number(bbox.x || 0)
     const y = Number(bbox.y || 0)
@@ -611,8 +621,48 @@ async function updateTelemetryChart() {
   }, true)
 }
 
+async function ensureWatchSession() {
+  if (watchSessionId.value) return true
+  try {
+    const data = await cameraApi.startWatchSession(cameraId)
+    const sid = String(data?.sessionId || '')
+    if (!sid) return false
+    watchSessionId.value = sid
+    return true
+  } catch (err) {
+    console.error('Failed to start watch session:', err)
+    return false
+  }
+}
+
+async function sendWatchHeartbeat() {
+  const sid = String(watchSessionId.value || '')
+  if (!sid) return
+  try {
+    await cameraApi.heartbeatWatchSession(cameraId, sid)
+  } catch (err) {
+    if (err?.status === 404) {
+      watchSessionId.value = ''
+      await ensureWatchSession()
+      return
+    }
+    console.error('Watch heartbeat failed:', err)
+  }
+}
+
+async function releaseWatchSession() {
+  const sid = String(watchSessionId.value || '')
+  if (!sid) return
+  watchSessionId.value = ''
+  try {
+    await cameraApi.stopWatchSession(cameraId, sid)
+  } catch {
+  }
+}
+
 onMounted(async () => {
   try {
+    await ensureWatchSession()
     await calibrateServerTime()
     await loadStreamInfo()
     await refreshHistoryData(true)
@@ -621,6 +671,9 @@ onMounted(async () => {
     refreshTimer = setInterval(loadStreamInfo, 1000)
     latencyTimer = setInterval(updateLatencyMetrics, 200)
     historyRefreshTimer = setInterval(() => refreshHistoryData(false), 10000)
+    watchHeartbeatTimer = setInterval(() => {
+      void sendWatchHeartbeat()
+    }, 10000)
     window.addEventListener('resize', resizeTelemetryChart)
     await nextTick()
     await updateTelemetryChart()
@@ -671,6 +724,7 @@ async function calibrateServerTime() {
 }
 
 function cleanup() {
+  void releaseWatchSession()
   void stopHistoryReplaySession()
   stopLivePlayer()
   clearHistoryVideo()
@@ -702,6 +756,10 @@ function cleanup() {
     clearInterval(historyRefreshTimer)
     historyRefreshTimer = null
   }
+  if (watchHeartbeatTimer) {
+    clearInterval(watchHeartbeatTimer)
+    watchHeartbeatTimer = null
+  }
 }
 
 function stopLivePlayer() {
@@ -732,8 +790,16 @@ async function loadStreamInfo() {
     if (data.stream_key) {
       liveFlvUrl.value = `${window.location.origin}/live/${data.stream_key}.flv`
     }
-    if (isLiveMode.value && liveFlvUrl.value && !player) {
-      startFlvPlayer(liveFlvUrl.value)
+    if (isLiveMode.value && liveFlvUrl.value) {
+      const publishActive = Boolean(data?.srs?.publishActive)
+      if (publishActive) {
+        if (!player) {
+          startFlvPlayer(liveFlvUrl.value)
+        }
+      } else {
+        connectionState.value = 'connecting'
+        stopLivePlayer()
+      }
     }
     if (isLiveMode.value && historyOverview.value?.timeRange?.endMs != null) {
       historySelectedMs.value = Math.min(Date.now(), historyOverview.value.timeRange.endMs)
@@ -814,6 +880,10 @@ function startFlvPlayer(url) {
 
   player.on(mpegts.Events.ERROR, (errorType, detail) => {
     console.error('[FLV Player] Error:', errorType, detail)
+    if (isLiveMode.value) {
+      connectionState.value = 'connecting'
+      return
+    }
     error.value = `Playback error: ${detail}`
     connectionState.value = 'error'
   })

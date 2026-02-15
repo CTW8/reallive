@@ -191,10 +191,38 @@ async function stopReplay(streamKey, sessionId) {
   return { ok: true, response };
 }
 
+function normalizeRuntimeStatus(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    ok: toBool(raw.ok, true),
+    running: toBool(raw.running, false),
+    desiredLive: toBool(raw.desiredLive ?? raw.desired_live, false),
+    activeLive: toBool(raw.activeLive ?? raw.active_live, false),
+  };
+}
+
+async function setLivePush(streamKey, enable) {
+  const response = await edgeRequest('POST', '/api/runtime/live', {
+    stream_key: streamKey,
+    enable: !!enable,
+  });
+  return normalizeRuntimeStatus(response);
+}
+
+async function getRuntimeStatus(streamKey) {
+  const response = await edgeRequest(
+    'GET',
+    `/api/runtime/status?stream_key=${encodeURIComponent(streamKey)}`
+  );
+  return normalizeRuntimeStatus(response);
+}
+
 module.exports = {
   isEnabled,
   getOverview,
   getTimeline,
   startReplay,
   stopReplay,
+  setLivePush,
+  getRuntimeStatus,
 };

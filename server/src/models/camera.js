@@ -17,6 +17,10 @@ const Camera = {
     return db.prepare('SELECT * FROM cameras WHERE user_id = ? ORDER BY created_at DESC').all(userId);
   },
 
+  findAll() {
+    return db.prepare('SELECT * FROM cameras ORDER BY id ASC').all();
+  },
+
   findByStreamKey(streamKey) {
     return db.prepare('SELECT * FROM cameras WHERE stream_key = ?').get(streamKey);
   },

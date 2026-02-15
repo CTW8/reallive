@@ -15,6 +15,7 @@ include_directories(${CMAKE_SOURCE_DIR}/src)
 
 option(REALLIVE_ENABLE_OPENCV "Enable OpenCV motion detector for person detection" ON)
 option(REALLIVE_ENABLE_TFLITE "Enable TFLite SSD detector for person detection" ON)
+option(REALLIVE_ENABLE_MQTT "Enable MQTT runtime control" ON)
 
 # Core sources
 set(CORE_SOURCES
@@ -23,6 +24,7 @@ set(CORE_SOURCES
     src/core/Pipeline.cpp
     src/core/LocalRecorder.cpp
     src/core/ControlServer.cpp
+    src/core/MqttRuntimeClient.cpp
 )
 
 # Platform sources
@@ -95,6 +97,21 @@ if(PLATFORM_RPI5)
             message(STATUS "TFLite SSD detector enabled")
         else()
             message(WARNING "TFLite not found, person detection will stay in motion-only fallback mode")
+        endif()
+    endif()
+
+    if(REALLIVE_ENABLE_MQTT)
+        pkg_check_modules(MOSQUITTO libmosquitto)
+        if(NOT MOSQUITTO_FOUND)
+            pkg_check_modules(MOSQUITTO mosquitto)
+        endif()
+        if(MOSQUITTO_FOUND)
+            target_include_directories(reallive-pusher PRIVATE ${MOSQUITTO_INCLUDE_DIRS})
+            target_link_libraries(reallive-pusher ${MOSQUITTO_LIBRARIES})
+            target_compile_definitions(reallive-pusher PRIVATE REALLIVE_HAS_MQTT=1)
+            message(STATUS "MQTT runtime control enabled")
+        else()
+            message(WARNING "libmosquitto not found, MQTT runtime control disabled at build time")
         endif()
     endif()
 endif()

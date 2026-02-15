@@ -3,13 +3,29 @@ const router = express.Router();
 const authMiddleware = require('../middleware/auth');
 const Camera = require('../models/camera');
 const Session = require('../models/session');
+const { getDeviceState } = require('../services/mqttControlService');
 
 router.use(authMiddleware);
 
 // GET /api/dashboard/stats
 router.get('/stats', (req, res) => {
   try {
-    const cameraStats = Camera.countByUserIdGroupedByStatus(req.user.id);
+    const cameras = Camera.findByUserId(req.user.id);
+    const cameraStats = {
+      total: cameras.length,
+      online: 0,
+      streaming: 0,
+      offline: 0,
+    };
+    for (const camera of cameras) {
+      const device = getDeviceState(camera.stream_key);
+      const status = device
+        ? (device.activeLive ? 'streaming' : 'online')
+        : (camera.status || 'offline');
+      if (status === 'streaming') cameraStats.streaming += 1;
+      else if (status === 'online') cameraStats.online += 1;
+      else cameraStats.offline += 1;
+    }
     const sessionStats = Session.getStatsForUser(req.user.id);
 
     res.json({

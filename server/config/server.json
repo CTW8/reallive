@@ -5,5 +5,14 @@
   "edgeReplay": {
     "url": "http://127.0.0.1:8090",
     "timeoutMs": 1500
+  },
+  "mqttControl": {
+    "enabled": true,
+    "brokerUrl": "mqtt://127.0.0.1:1883",
+    "topicPrefix": "reallive/device",
+    "commandQos": 1,
+    "stateQos": 0,
+    "commandRetain": true,
+    "stateStaleMs": 12000
   }
 }

@@ -36,9 +36,24 @@ export const useCameraStore = defineStore('camera', () => {
     cameras.value = cameras.value.filter((c) => c.id !== id)
   }
 
-  function updateCameraStatus(cameraId, status) {
+  function updateCameraStatus(cameraId, status, patch = null) {
     const cam = cameras.value.find((c) => c.id === cameraId)
-    if (cam) cam.status = status
+    if (!cam) return false
+    let changed = false
+    if (cam.status !== status) {
+      cam.status = status
+      changed = true
+    }
+    if (patch && typeof patch === 'object') {
+      if (patch.thumbnailUrl !== undefined && cam.thumbnailUrl !== patch.thumbnailUrl) {
+        cam.thumbnailUrl = patch.thumbnailUrl
+        changed = true
+      }
+      if (patch.device !== undefined) {
+        cam.device = patch.device
+      }
+    }
+    return changed
   }
 
   return { cameras, loading, fetchCameras, addCamera, updateCamera, removeCamera, updateCameraStatus }

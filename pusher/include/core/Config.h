@@ -44,6 +44,20 @@ struct DetectionConfig {
     int inferMinIntervalMs = 220;
 };
 
+struct MqttConfig {
+    bool enabled = false;
+    std::string host = "127.0.0.1";
+    int port = 1883;
+    std::string clientId = "";
+    std::string username = "";
+    std::string password = "";
+    std::string topicPrefix = "reallive/device";
+    int keepaliveSec = 30;
+    int commandQos = 1;
+    int stateQos = 0;
+    int stateIntervalMs = 1000;
+};
+
 struct PusherConfig {
     StreamConfig stream;
     CaptureConfig camera;
@@ -52,6 +66,7 @@ struct PusherConfig {
     RecordConfig record;
     ControlConfig control;
     DetectionConfig detection;
+    MqttConfig mqtt;
     bool enableAudio = false;
 };
 
