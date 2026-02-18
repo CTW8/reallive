@@ -1,0 +1,44 @@
+{
+  "buildFiles": [
+    "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/lizhen/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/.cxx/Debug/5j6w3c5p/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/lizhen/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/.cxx/Debug/5j6w3c5p/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "reallive_player::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "reallive_player",
+      "output": "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/build/intermediates/cxx/Debug/5j6w3c5p/obj/arm64-v8a/libreallive_player.so",
+      "runtimeFiles": [
+        "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/third_party/ffmpeg/lib/arm64-v8a/libavformat.so",
+        "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/third_party/ffmpeg/lib/arm64-v8a/libavcodec.so",
+        "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/third_party/ffmpeg/lib/arm64-v8a/libavutil.so",
+        "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/third_party/ffmpeg/lib/arm64-v8a/libswscale.so",
+        "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/third_party/ffmpeg/lib/arm64-v8a/libswresample.so"
+      ]
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/Users/lizhen/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/Users/lizhen/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

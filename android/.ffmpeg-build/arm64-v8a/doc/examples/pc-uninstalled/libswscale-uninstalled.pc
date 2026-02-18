@@ -1,7 +1,7 @@
 prefix=
 exec_prefix=
 libdir=${pcfiledir}/../../../libswscale
-includedir=/Volumes/homes/reallive/ffmpeg-8.0.1
+includedir=/Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1
 
 Name: libswscale
 Description: FFmpeg image rescaling library

@@ -1,0 +1,1 @@
+/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/build/intermediates/cxx/Debug/5j6w3c5p/obj/armeabi-v7a

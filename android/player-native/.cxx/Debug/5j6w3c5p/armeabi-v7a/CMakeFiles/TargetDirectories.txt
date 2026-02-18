@@ -1,0 +1,3 @@
+/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/.cxx/Debug/5j6w3c5p/armeabi-v7a/CMakeFiles/reallive_player.dir
+/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/.cxx/Debug/5j6w3c5p/armeabi-v7a/CMakeFiles/edit_cache.dir
+/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/.cxx/Debug/5j6w3c5p/armeabi-v7a/CMakeFiles/rebuild_cache.dir

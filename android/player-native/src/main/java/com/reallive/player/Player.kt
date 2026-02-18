@@ -13,5 +13,7 @@ interface Player {
 
     fun stop()
 
+    fun getStats(): PlayerStats
+
     fun release()
 }

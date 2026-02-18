@@ -28,6 +28,6 @@ libavcodec/hevc/pred.o: src/libavcodec/hevc/pred.c \
   src/libavcodec/h2645_sei.h src/libavcodec/aom_film_grain.h \
   src/libavcodec/bytestream.h src/libavcodec/sei.h \
   src/libavcodec/hevc/pred_template.c src/libavutil/pixdesc.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/bit_depth_template.c \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/mathops.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/rnd_avg.h
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/bit_depth_template.c \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/mathops.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/rnd_avg.h

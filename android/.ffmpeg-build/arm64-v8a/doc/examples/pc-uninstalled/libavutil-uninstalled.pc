@@ -1,7 +1,7 @@
 prefix=
 exec_prefix=
 libdir=${pcfiledir}/../../../libavutil
-includedir=/Volumes/homes/reallive/ffmpeg-8.0.1
+includedir=/Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1
 
 Name: libavutil
 Description: FFmpeg utility library

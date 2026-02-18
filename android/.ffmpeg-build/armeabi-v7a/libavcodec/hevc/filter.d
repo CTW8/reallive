@@ -28,4 +28,4 @@ libavcodec/hevc/filter.o: src/libavcodec/hevc/filter.c \
   src/libavcodec/hevc/sei.h src/libavcodec/h2645_sei.h \
   src/libavcodec/aom_film_grain.h src/libavcodec/bytestream.h \
   src/libavcodec/sei.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/progressframe.h
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/progressframe.h

@@ -1,14 +1,34 @@
 package com.reallive.android.network
 
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface RealLiveApi {
+    @POST("api/auth/login")
+    suspend fun login(@Body body: AuthLoginRequest): AuthResponse
+
+    @POST("api/auth/register")
+    suspend fun register(@Body body: AuthRegisterRequest): AuthResponse
+
     @GET("api/cameras")
     suspend fun listCameras(): List<CameraDto>
+
+    @POST("api/cameras")
+    suspend fun createCamera(@Body body: Map<String, String>): CameraDto
+
+    @PUT("api/cameras/{id}")
+    suspend fun updateCamera(
+        @Path("id") cameraId: Long,
+        @Body body: Map<String, String>,
+    ): CameraDto
+
+    @DELETE("api/cameras/{id}")
+    suspend fun deleteCamera(@Path("id") cameraId: Long): DeleteCameraResponse
 
     @GET("api/cameras/{id}/stream")
     suspend fun getStreamInfo(@Path("id") cameraId: Long): StreamInfoDto
@@ -43,4 +63,25 @@ interface RealLiveApi {
         @Path("id") cameraId: Long,
         @Query("ts") tsMs: Long,
     ): HistoryPlaybackDto
+
+    @POST("api/cameras/{id}/history/replay/stop")
+    suspend fun stopHistoryReplay(
+        @Path("id") cameraId: Long,
+        @Body body: Map<String, String?>,
+    ): ReplayStopResponse
+
+    @GET("api/dashboard/stats")
+    suspend fun getDashboardStats(): DashboardStatsDto
+
+    @GET("api/health")
+    suspend fun getHealth(): HealthDto
+
+    @GET("api/sessions")
+    suspend fun listSessions(
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
+    ): SessionListResponse
+
+    @GET("api/sessions/active")
+    suspend fun listActiveSessions(): ActiveSessionResponse
 }

@@ -1,7 +1,7 @@
-prefix=/Volumes/homes/reallive/android/.ffmpeg-build/install/armeabi-v7a
+prefix=/Users/lizhen/AndroidStudioProjects/reallive/android/.ffmpeg-build/install/armeabi-v7a
 exec_prefix=${prefix}
-libdir=/Volumes/homes/reallive/android/.ffmpeg-build/install/armeabi-v7a/lib
-includedir=/Volumes/homes/reallive/android/.ffmpeg-build/install/armeabi-v7a/include
+libdir=/Users/lizhen/AndroidStudioProjects/reallive/android/.ffmpeg-build/install/armeabi-v7a/lib
+includedir=/Users/lizhen/AndroidStudioProjects/reallive/android/.ffmpeg-build/install/armeabi-v7a/include
 
 Name: libavformat
 Description: FFmpeg container format library

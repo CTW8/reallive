@@ -136,3 +136,109 @@ export const sessionApi = {
     return request('/sessions/active')
   },
 }
+
+export const alertApi = {
+  list(filters = {}) {
+    const query = new URLSearchParams()
+    if (filters.type) query.set('type', filters.type)
+    if (filters.status) query.set('status', filters.status)
+    if (filters.limit) query.set('limit', filters.limit)
+    const qs = query.toString()
+    return request(`/alerts${qs ? '?' + qs : ''}`)
+  },
+  getStats() {
+    return request('/alerts/stats')
+  },
+  getUnreadCount() {
+    return request('/alerts/unread-count')
+  },
+  get(id) {
+    return request(`/alerts/${id}`)
+  },
+  create(data) {
+    return request('/alerts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  update(id, data) {
+    return request(`/alerts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+  markRead(id) {
+    return request(`/alerts/${id}/read`, { method: 'POST' })
+  },
+  resolve(id) {
+    return request(`/alerts/${id}/resolve`, { method: 'POST' })
+  },
+  batchAction(ids, action) {
+    return request('/alerts/batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids, action }),
+    })
+  },
+  delete(id) {
+    return request(`/alerts/${id}`, { method: 'DELETE' })
+  },
+}
+
+export const ruleApi = {
+  list(filters = {}) {
+    const query = new URLSearchParams()
+    if (filters.priority) query.set('priority', filters.priority)
+    if (filters.enabled) query.set('enabled', filters.enabled)
+    if (filters.escalation) query.set('escalation', filters.escalation)
+    if (filters.query) query.set('query', filters.query)
+    if (filters.sortBy) query.set('sortBy', filters.sortBy)
+    if (filters.order) query.set('order', filters.order)
+    const qs = query.toString()
+    return request(`/alert-rules${qs ? '?' + qs : ''}`)
+  },
+  get(id) {
+    return request(`/alert-rules/${id}`)
+  },
+  create(data) {
+    return request('/alert-rules', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  update(id, data) {
+    return request(`/alert-rules/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+  toggle(id) {
+    return request(`/alert-rules/${id}/toggle`, { method: 'POST' })
+  },
+  batchAction(ids, action) {
+    return request('/alert-rules/batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids, action }),
+    })
+  },
+  delete(id) {
+    return request(`/alert-rules/${id}`, { method: 'DELETE' })
+  },
+}
+
+export const storageApi = {
+  getOverview() {
+    return request('/storage/overview')
+  },
+  getTrend(days = 14) {
+    return request(`/storage/trend?days=${days}`)
+  },
+  getByDevice() {
+    return request('/storage/by-device')
+  },
+  updatePolicy(data) {
+    return request('/storage/policy', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+}

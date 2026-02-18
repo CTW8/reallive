@@ -10,10 +10,7 @@
         android:theme="@style/Theme.RealLive"
         android:usesCleartextTraffic="true">
         <activity
-            android:name="com.reallive.android.ui.watch.WatchActivity"
-            android:screenOrientation="portrait" />
-        <activity
-            android:name="com.reallive.android.ui.dashboard.DashboardActivity"
+            android:name="com.reallive.android.ui.auth.SplashActivity"
             android:exported="true"
             android:screenOrientation="portrait">
             <intent-filter>
@@ -22,6 +19,101 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name="com.reallive.android.ui.auth.LoginActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.auth.ForgotPasswordActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.auth.RegisterActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.multiview.MultiViewActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.search.SearchActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.notifications.NotificationsActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.history.HistoryActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.settings.ProfileActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.settings.StorageActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.settings.SecurityActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.settings.SettingsActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.settings.PermissionGuideActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.settings.TwoFactorSetupActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.settings.UpgradePlanActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.camera.AddCameraActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.camera.CameraListActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.camera.CameraSetupActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.camera.CameraSettingsActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.camera.CameraConnectProgressActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.camera.CameraConnectSuccessActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.camera.CameraConnectFailedActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.watch.ptz.PtzActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.watch.snapshot.SnapshotGalleryActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.watch.ShareSheetActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.watch.CalendarPickerActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.watch.EventDetailActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.watch.WatchActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.reallive.android.ui.dashboard.DashboardActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

@@ -8,6 +8,9 @@ const authRoutes = require('./routes/auth');
 const cameraRoutes = require('./routes/cameras');
 const dashboardRoutes = require('./routes/dashboard');
 const sessionRoutes = require('./routes/sessions');
+const alertRoutes = require('./routes/alerts');
+const ruleRoutes = require('./routes/rules');
+const storageRoutes = require('./routes/storage');
 
 const app = express();
 
@@ -38,6 +41,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/cameras', cameraRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/alerts', alertRoutes);
+app.use('/api/alert-rules', ruleRoutes);
+app.use('/api/storage', storageRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

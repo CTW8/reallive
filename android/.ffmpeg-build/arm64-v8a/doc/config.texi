@@ -439,14 +439,14 @@
 @set config-avio-list-dir-example yes
 @set config-avio-read-callback-example yes
 @set config-decode-audio-example yes
-@set config-decode-filter-audio-example yes
-@set config-decode-filter-video-example yes
+@c @set config-decode-filter-audio-example no
+@c @set config-decode-filter-video-example no
 @set config-decode-video-example yes
 @set config-demux-decode-example yes
 @set config-encode-audio-example yes
 @set config-encode-video-example yes
 @set config-extract-mvs-example yes
-@set config-filter-audio-example yes
+@c @set config-filter-audio-example no
 @set config-hw-decode-example yes
 @set config-mux-example yes
 @c @set config-qsv-decode-example no
@@ -455,7 +455,7 @@
 @set config-scale-video-example yes
 @set config-show-metadata-example yes
 @set config-transcode-aac-example yes
-@set config-transcode-example yes
+@c @set config-transcode-example no
 @c @set config-vaapi-encode-example no
 @c @set config-vaapi-transcode-example no
 @c @set config-qsv-transcode-example no
@@ -630,7 +630,7 @@
 @c @set config-nonfree no
 @c @set config-version3 no
 @c @set config-avdevice no
-@set config-avfilter yes
+@c @set config-avfilter no
 @set config-swscale yes
 @set config-avformat yes
 @set config-avcodec yes

@@ -1,5 +1,5 @@
 libavcodec/hevc/sei.o: src/libavcodec/hevc/sei.c \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/bytestream.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/bytestream.h \
   src/libavutil/avassert.h config.h src/libavutil/attributes.h \
   src/libavutil/log.h src/libavutil/version.h src/libavutil/macros.h \
   libavutil/avconfig.h src/libavutil/common.h src/libavutil/error.h \
@@ -7,12 +7,12 @@ libavcodec/hevc/sei.o: src/libavcodec/hevc/sei.c \
   src/libavutil/mathematics.h src/libavutil/rational.h \
   src/libavutil/intfloat.h src/libavutil/intreadwrite.h \
   src/libavutil/bswap.h src/libavutil/aarch64/intreadwrite.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/golomb.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/get_bits.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/defs.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/mathops.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/golomb.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/get_bits.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/defs.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/mathops.h \
   src/libavutil/attributes_internal.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/vlc.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/vlc.h \
   src/libavcodec/hevc/ps.h src/libavutil/pixfmt.h \
   src/libavcodec/avcodec.h src/libavutil/samplefmt.h \
   src/libavutil/avutil.h src/libavutil/buffer.h \

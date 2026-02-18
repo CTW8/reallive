@@ -1,4 +1,38 @@
 <resources>
+    <color name="rl_bg">#0A0E16</color>
+    <color name="rl_surface">#141B27</color>
+    <color name="rl_surface_alt">#1B2535</color>
+    <color name="rl_surface_elevated">#202B3D</color>
+    <color name="rl_border">#2B3A51</color>
+
+    <color name="rl_text_primary">#EBF1FF</color>
+    <color name="rl_text_secondary">#AAB6CD</color>
+    <color name="rl_text_muted">#7E8AA2</color>
+
+    <color name="rl_brand">#9CA8FF</color>
+    <color name="rl_brand_dark">#6172E9</color>
+    <color name="rl_brand_soft">#29345C</color>
+    <color name="rl_secondary">#7EC8FF</color>
+    <color name="rl_secondary_soft">#1D3855</color>
+    <color name="rl_tertiary">#4ED4B0</color>
+    <color name="rl_tertiary_soft">#1F4A43</color>
+
+    <color name="rl_success">#59D97E</color>
+    <color name="rl_warning">#FFB24D</color>
+    <color name="rl_error">#FF7081</color>
+    <color name="rl_offline">#687389</color>
+
+    <color name="rl_status_streaming_bg">#1A3C29</color>
+    <color name="rl_status_online_bg">#1B3650</color>
+    <color name="rl_status_offline_bg">#273145</color>
+
+    <color name="auth_bg">#1C1B1F</color>
+    <color name="auth_outline">#938F99</color>
+    <color name="auth_outline_light">#66FFFFFF</color>
+    <color name="auth_on_surface_variant">#CAC4D0</color>
+    <color name="auth_primary">#C8BFFF</color>
+    <color name="auth_on_primary">#2F0094</color>
+
     <color name="black">#000000</color>
     <color name="white">#FFFFFF</color>
 </resources>

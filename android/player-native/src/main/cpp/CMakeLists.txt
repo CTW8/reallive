@@ -18,6 +18,15 @@ find_library(z-lib z)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if (ANDROID)
+    target_link_options(
+        reallive_player
+        PRIVATE
+        "-Wl,-z,max-page-size=16384"
+        "-Wl,-z,common-page-size=16384"
+    )
+endif()
+
 target_include_directories(
     reallive_player
     PRIVATE

@@ -1,0 +1,19 @@
+# ninja log v5
+1	204	1771205287031189433	CMakeFiles/reallive_player.dir/player/core/PlayerController.cpp.o	7d283d91985822af
+0	214	1771205287041332648	CMakeFiles/reallive_player.dir/jni/NativePlayerJni.cpp.o	70684afd31fe5be2
+0	318	1771205287145805353	CMakeFiles/reallive_player.dir/player/impl/FfmpegPlayer.cpp.o	efcabcbe8187bb41
+318	350	1771205287178232633	/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/build/intermediates/cxx/Debug/5j6w3c5p/obj/armeabi-v7a/libreallive_player.so	876734d254c20268
+2	392	1771207440653586325	CMakeFiles/reallive_player.dir/player/impl/FfmpegPlayer.cpp.o	efcabcbe8187bb41
+392	440	1771207440702476223	/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/build/intermediates/cxx/Debug/5j6w3c5p/obj/armeabi-v7a/libreallive_player.so	876734d254c20268
+2	299	1771208074123200026	CMakeFiles/reallive_player.dir/player/impl/FfmpegPlayer.cpp.o	efcabcbe8187bb41
+299	344	1771208074168708409	/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/build/intermediates/cxx/Debug/5j6w3c5p/obj/armeabi-v7a/libreallive_player.so	876734d254c20268
+2	302	1771208101159941417	CMakeFiles/reallive_player.dir/player/impl/FfmpegPlayer.cpp.o	efcabcbe8187bb41
+302	347	1771208101205440545	/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/build/intermediates/cxx/Debug/5j6w3c5p/obj/armeabi-v7a/libreallive_player.so	876734d254c20268
+2	295	1771208152287213284	CMakeFiles/reallive_player.dir/player/impl/FfmpegPlayer.cpp.o	efcabcbe8187bb41
+295	337	1771208152329728483	/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/build/intermediates/cxx/Debug/5j6w3c5p/obj/armeabi-v7a/libreallive_player.so	876734d254c20268
+3	297	1771208797052536380	CMakeFiles/reallive_player.dir/player/core/PlayerController.cpp.o	7d283d91985822af
+2	300	1771208797057824989	CMakeFiles/reallive_player.dir/jni/NativePlayerJni.cpp.o	70684afd31fe5be2
+2	467	1771208797223663811	CMakeFiles/reallive_player.dir/player/impl/FfmpegPlayer.cpp.o	efcabcbe8187bb41
+467	515	1771208797273092889	/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/build/intermediates/cxx/Debug/5j6w3c5p/obj/armeabi-v7a/libreallive_player.so	876734d254c20268
+1	325	1771209661434164925	CMakeFiles/reallive_player.dir/player/impl/FfmpegPlayer.cpp.o	efcabcbe8187bb41
+325	366	1771209661477007724	/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/build/intermediates/cxx/Debug/5j6w3c5p/obj/armeabi-v7a/libreallive_player.so	876734d254c20268

@@ -1,0 +1,17 @@
+[
+{
+  "directory": "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/.cxx/Debug/5j6w3c5p/armeabi-v7a",
+  "command": "/Users/lizhen/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++ --target=armv7-none-linux-androideabi26 --sysroot=/Users/lizhen/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -Dreallive_player_EXPORTS -I/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp -I/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/third_party/ffmpeg/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -std=c++17 -O2 -fno-limit-debug-info  -fPIC -o CMakeFiles/reallive_player.dir/jni/NativePlayerJni.cpp.o -c /Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/jni/NativePlayerJni.cpp",
+  "file": "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/jni/NativePlayerJni.cpp"
+},
+{
+  "directory": "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/.cxx/Debug/5j6w3c5p/armeabi-v7a",
+  "command": "/Users/lizhen/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++ --target=armv7-none-linux-androideabi26 --sysroot=/Users/lizhen/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -Dreallive_player_EXPORTS -I/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp -I/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/third_party/ffmpeg/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -std=c++17 -O2 -fno-limit-debug-info  -fPIC -o CMakeFiles/reallive_player.dir/player/core/PlayerController.cpp.o -c /Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/player/core/PlayerController.cpp",
+  "file": "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/player/core/PlayerController.cpp"
+},
+{
+  "directory": "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/.cxx/Debug/5j6w3c5p/armeabi-v7a",
+  "command": "/Users/lizhen/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++ --target=armv7-none-linux-androideabi26 --sysroot=/Users/lizhen/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -Dreallive_player_EXPORTS -I/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp -I/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/third_party/ffmpeg/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -std=c++17 -O2 -fno-limit-debug-info  -fPIC -o CMakeFiles/reallive_player.dir/player/impl/FfmpegPlayer.cpp.o -c /Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/player/impl/FfmpegPlayer.cpp",
+  "file": "/Users/lizhen/AndroidStudioProjects/reallive/android/player-native/src/main/cpp/player/impl/FfmpegPlayer.cpp"
+}
+]

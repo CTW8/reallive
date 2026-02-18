@@ -22,6 +22,7 @@ db.exec(`
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
+    role TEXT DEFAULT 'viewer',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -32,6 +33,9 @@ db.exec(`
     stream_key TEXT UNIQUE NOT NULL,
     status TEXT DEFAULT 'offline',
     resolution TEXT DEFAULT '1080p',
+    location TEXT,
+    ip_address TEXT,
+    model TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
@@ -43,6 +47,43 @@ db.exec(`
     end_time DATETIME,
     status TEXT DEFAULT 'active',
     FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    camera_id INTEGER,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'new',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS alert_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    priority TEXT DEFAULT 'medium',
+    condition TEXT NOT NULL,
+    actions TEXT NOT NULL,
+    escalation TEXT DEFAULT 'Immediately',
+    quiet_hours TEXT DEFAULT 'Disabled',
+    enabled INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    action TEXT NOT NULL,
+    type TEXT DEFAULT 'config',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
   );
 `);
 

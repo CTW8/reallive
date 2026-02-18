@@ -9,15 +9,15 @@ libavcodec/hevc/refs.o: src/libavcodec/hevc/refs.c \
   src/libavutil/intfloat.h src/libavutil/log.h src/libavutil/pixfmt.h \
   src/libavutil/buffer.h src/libavutil/channel_layout.h \
   src/libavutil/dict.h src/libavutil/samplefmt.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/decode.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/decode.h \
   src/libavutil/hwcontext.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/avcodec.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/codec.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/avcodec.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/codec.h \
   src/libavcodec/codec_id.h src/libavcodec/version_major.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/codec_id.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/defs.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/packet.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/version_major.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/codec_id.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/defs.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/packet.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/version_major.h \
   src/libavcodec/hevc/hevc.h src/libavcodec/hevc/hevcdec.h \
   src/libavutil/mem_internal.h src/libavcodec/avcodec.h \
   src/libavcodec/bswapdsp.h src/libavcodec/cabac.h \
@@ -35,6 +35,6 @@ libavcodec/hevc/refs.o: src/libavcodec/hevc/refs.c \
   src/libavcodec/hevc/sei.h src/libavcodec/h2645_sei.h \
   src/libavcodec/aom_film_grain.h src/libavcodec/bytestream.h \
   src/libavcodec/sei.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/progressframe.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/thread.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/progressframe.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/thread.h \
   src/libavutil/refstruct.h

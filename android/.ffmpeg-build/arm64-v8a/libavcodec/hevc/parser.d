@@ -5,15 +5,15 @@ libavcodec/hevc/parser.o: src/libavcodec/hevc/parser.c \
   src/libavutil/internal.h src/libavutil/libm.h \
   src/libavutil/mathematics.h src/libavutil/rational.h \
   src/libavutil/intfloat.h src/libavutil/mem.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/golomb.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/get_bits.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/golomb.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/get_bits.h \
   src/libavutil/intreadwrite.h src/libavutil/bswap.h \
   src/libavutil/aarch64/intreadwrite.h src/libavutil/avassert.h \
   src/libavutil/log.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/defs.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/mathops.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/defs.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/mathops.h \
   src/libavutil/attributes_internal.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/vlc.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/vlc.h \
   src/libavcodec/hevc/hevc.h src/libavcodec/hevc/parse.h \
   src/libavcodec/hevc/ps.h src/libavutil/pixfmt.h \
   src/libavcodec/avcodec.h src/libavutil/samplefmt.h \
@@ -26,7 +26,7 @@ libavcodec/hevc/parser.o: src/libavcodec/hevc/parser.c \
   src/libavcodec/hevc/sei.h src/libavcodec/h2645_sei.h \
   src/libavutil/film_grain_params.h src/libavcodec/aom_film_grain.h \
   src/libavcodec/bytestream.h src/libavcodec/sei.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/h2645_parse.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/codec_id.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/parser.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/avcodec.h
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/h2645_parse.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/codec_id.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/parser.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/avcodec.h

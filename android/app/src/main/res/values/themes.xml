@@ -1,3 +1,37 @@
 <resources>
-    <style name="Theme.RealLive" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+    <style name="Theme.RealLive" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/rl_brand</item>
+        <item name="colorOnPrimary">@color/rl_bg</item>
+        <item name="colorPrimaryContainer">@color/rl_brand_soft</item>
+        <item name="colorOnPrimaryContainer">@color/rl_text_primary</item>
+
+        <item name="colorSecondary">@color/rl_secondary</item>
+        <item name="colorOnSecondary">@color/rl_bg</item>
+        <item name="colorSecondaryContainer">@color/rl_secondary_soft</item>
+        <item name="colorOnSecondaryContainer">@color/rl_text_primary</item>
+
+        <item name="colorTertiary">@color/rl_tertiary</item>
+        <item name="colorOnTertiary">@color/rl_bg</item>
+        <item name="colorTertiaryContainer">@color/rl_tertiary_soft</item>
+        <item name="colorOnTertiaryContainer">@color/rl_text_primary</item>
+
+        <item name="colorError">@color/rl_error</item>
+        <item name="colorOnError">@color/rl_bg</item>
+
+        <item name="colorSurface">@color/rl_surface</item>
+        <item name="colorOnSurface">@color/rl_text_primary</item>
+        <item name="colorSurfaceVariant">@color/rl_surface_alt</item>
+        <item name="colorOnSurfaceVariant">@color/rl_text_secondary</item>
+        <item name="colorOutline">@color/rl_border</item>
+        <item name="colorOutlineVariant">@color/rl_border</item>
+
+        <item name="android:colorBackground">@color/rl_bg</item>
+        <item name="colorOnBackground">@color/rl_text_primary</item>
+        <item name="android:windowBackground">@color/rl_bg</item>
+
+        <item name="android:statusBarColor">@color/rl_bg</item>
+        <item name="android:navigationBarColor">@color/rl_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
 </resources>

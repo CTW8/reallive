@@ -9,6 +9,7 @@ FFMPEG_SRC=${FFMPEG_SRC:-${1:-$FFMPEG_SRC_DEFAULT}}
 API_LEVEL=${API_LEVEL:-26}
 ABIS_STR=${ABIS:-"arm64-v8a armeabi-v7a"}
 ABIS=($ABIS_STR)
+PAGE_SIZE_LDFLAGS=${PAGE_SIZE_LDFLAGS:-"-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"}
 
 OUTPUT_ROOT="$REPO_ROOT/android/player-native/src/main/cpp/third_party/ffmpeg"
 BUILD_ROOT="$REPO_ROOT/android/.ffmpeg-build"
@@ -98,6 +99,7 @@ log "NDK: $NDK_PATH"
 log "Toolchain: $TOOLCHAIN"
 log "ABIs: ${ABIS[*]}"
 log "API level: $API_LEVEL"
+log "Page-size ldflags: $PAGE_SIZE_LDFLAGS"
 
 for ABI in "${ABIS[@]}"; do
   case "$ABI" in
@@ -167,7 +169,7 @@ for ABI in "${ABIS[@]}"; do
     --enable-decoder=h264,hevc,aac \
     --enable-network \
     --extra-cflags="$EXTRA_CFLAGS" \
-    --extra-ldflags="-Wl,--gc-sections"
+    --extra-ldflags="-Wl,--gc-sections $PAGE_SIZE_LDFLAGS"
 
   log "Building $ABI ..."
   make -j"$(sysctl -n hw.logicalcpu 2>/dev/null || echo 8)"

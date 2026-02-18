@@ -1,27 +1,26 @@
 package com.reallive.android.ui.dashboard
 
+import android.graphics.drawable.GradientDrawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
-import coil.load
+import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import coil.load
 import com.reallive.android.R
 import com.reallive.android.network.CameraDto
+import java.util.Locale
 
 class CameraAdapter(
     private val baseUrl: String,
     private val onClick: (CameraDto) -> Unit,
-) : RecyclerView.Adapter<CameraAdapter.CameraViewHolder>() {
-
-    private val items = mutableListOf<CameraDto>()
-
-    fun submitList(newItems: List<CameraDto>) {
-        items.clear()
-        items.addAll(newItems)
-        notifyDataSetChanged()
-    }
+    private val onLongClick: (CameraDto) -> Unit,
+    private val onMenuClick: (CameraDto) -> Unit,
+) : ListAdapter<CameraDto, CameraAdapter.CameraViewHolder>(DiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CameraViewHolder {
         val v = LayoutInflater.from(parent.context)
@@ -29,12 +28,15 @@ class CameraAdapter(
         return CameraViewHolder(v)
     }
 
-    override fun getItemCount(): Int = items.size
-
     override fun onBindViewHolder(holder: CameraViewHolder, position: Int) {
-        val item = items[position]
+        val item = getItem(position)
         holder.bind(item, baseUrl)
         holder.itemView.setOnClickListener { onClick(item) }
+        holder.itemView.setOnLongClickListener {
+            onLongClick(item)
+            true
+        }
+        holder.bindMenuClick { onMenuClick(item) }
     }
 
     class CameraViewHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -45,25 +47,54 @@ class CameraAdapter(
         private val statusDot: View = view.findViewById(R.id.status_dot)
         private val thumbnailView: ImageView = view.findViewById(R.id.camera_thumbnail)
         private val thumbnailHint: TextView = view.findViewById(R.id.camera_thumbnail_hint)
+        private val moreButton: View = view.findViewById(R.id.camera_more)
+
+        fun bindMenuClick(onClick: () -> Unit) {
+            moreButton.setOnClickListener { onClick() }
+        }
 
         fun bind(item: CameraDto, baseUrl: String) {
             nameText.text = item.name
-            streamKeyText.text = item.stream_key
-            val status = item.status ?: "offline"
-            statusText.text = status
-            val color = when (status.lowercase()) {
-                "streaming" -> 0xFF4CAF50.toInt()
-                "online" -> 0xFF00BCD4.toInt()
-                else -> 0xFFF44336.toInt()
+
+            val status = (item.status ?: "offline").lowercase(Locale.US)
+            val (dotColor, labelColor, statusLabel) = when (status) {
+                "online" -> Triple(
+                    ContextCompat.getColor(itemView.context, R.color.rl_brand),
+                    ContextCompat.getColor(itemView.context, R.color.rl_brand),
+                    "Online",
+                )
+                "streaming" -> Triple(
+                    ContextCompat.getColor(itemView.context, R.color.rl_warning),
+                    ContextCompat.getColor(itemView.context, R.color.rl_warning),
+                    "REC",
+                )
+                else -> Triple(
+                    ContextCompat.getColor(itemView.context, R.color.rl_offline),
+                    ContextCompat.getColor(itemView.context, R.color.rl_text_muted),
+                    "Offline",
+                )
             }
-            statusDot.setBackgroundColor(color)
+
+            statusDot.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(dotColor)
+            }
+            statusText.text = statusLabel
+            statusText.setTextColor(labelColor)
+
+            val resText = item.resolution ?: "auto"
+            val location = when (item.name.lowercase(Locale.US)) {
+                "front door" -> "Main Entrance"
+                "garage" -> "Side Building"
+                "living room" -> "Indoor"
+                "backyard" -> "Garden"
+                "warehouse" -> "Storage"
+                else -> "Camera Area"
+            }
+            streamKeyText.text = "$location · $resText"
 
             val updatedAt = item.device?.updatedAt
-            runtimeText.text = if (updatedAt != null && updatedAt > 0) {
-                "heartbeat: ${formatSince(updatedAt)}"
-            } else {
-                "heartbeat: -"
-            }
+            runtimeText.text = if (updatedAt != null && updatedAt > 0) "Updated ${formatSince(updatedAt)}" else ""
 
             val thumbUrl = absoluteUrl(baseUrl, item.thumbnailUrl)
             if (thumbUrl == null) {
@@ -93,6 +124,16 @@ class CameraAdapter(
             if (min < 60) return "${min}m ago"
             val h = min / 60
             return "${h}h ago"
+        }
+    }
+
+    private class DiffCallback : DiffUtil.ItemCallback<CameraDto>() {
+        override fun areItemsTheSame(oldItem: CameraDto, newItem: CameraDto): Boolean {
+            return oldItem.id == newItem.id
+        }
+
+        override fun areContentsTheSame(oldItem: CameraDto, newItem: CameraDto): Boolean {
+            return oldItem == newItem
         }
     }
 }

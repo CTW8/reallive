@@ -1,39 +1,28 @@
 <script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth.js'
-import Navbar from './components/Navbar.vue'
+import AppShell from './components/layout/AppShell.vue'
+import './styles/global.css'
 
+const route = useRoute()
 const auth = useAuthStore()
+
+const needsShell = computed(() => {
+  return auth.isLoggedIn && !['Login', 'Register'].includes(route.name)
+})
 </script>
 
 <template>
-  <div class="app">
-    <Navbar v-if="auth.isLoggedIn" />
-    <main class="main-content" :class="{ 'no-nav': !auth.isLoggedIn }">
-      <router-view />
-    </main>
-  </div>
+  <AppShell v-if="needsShell">
+    <router-view />
+  </AppShell>
+  <router-view v-else />
 </template>
 
-<style scoped>
-.app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.main-content {
-  flex: 1;
-  padding: 24px;
-  max-width: 1400px;
+<style>
+#app {
   width: 100%;
-  margin: 0 auto;
-}
-
-.main-content.no-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  max-width: none;
+  height: 100%;
 }
 </style>

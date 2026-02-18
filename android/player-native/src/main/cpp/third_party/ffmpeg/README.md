@@ -36,6 +36,9 @@ FFMPEG_SRC=/your/path/ffmpeg-8.0.1 ./android/scripts/build_ffmpeg_android.sh
 ## Notes
 
 - Built as **shared libraries** (`.so`)
+- Uses linker flags for **16 KB page-size compatible** ELF load segments:
+  - `-Wl,-z,max-page-size=16384`
+  - `-Wl,-z,common-page-size=16384`
 - Enabled low-latency relevant components:
   - protocols: `file,http,tcp`
   - demuxers: `flv,mov,mp4,m4a,matroska,mpegts`

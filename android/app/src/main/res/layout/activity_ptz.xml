@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0F0E18">
+
+    <ImageView
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_gravity="center"
+        android:src="@drawable/ic_videocam_48"
+        android:tint="#33FFFFFF" />
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/ptz_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        app:navigationIcon="@drawable/ic_arrow_back_24"
+        app:navigationIconTint="@color/white"
+        app:title="@string/ptz_title"
+        app:titleTextColor="@color/white" />
+
+    <TextView
+        android:id="@+id/ptz_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="72dp"
+        android:background="#99000000"
+        android:paddingStart="8dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="4dp"
+        android:text="Ready"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textColor="@color/white" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ptz_up"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="64dp"
+                android:layout_height="40dp"
+                android:text="↑"
+                android:textAllCaps="false"
+                app:strokeColor="@color/auth_outline_light" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/ptz_left"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="64dp"
+                    android:layout_height="40dp"
+                    android:text="←"
+                    android:textAllCaps="false"
+                    app:strokeColor="@color/auth_outline_light" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/ptz_stop"
+                    android:layout_width="64dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
+                    android:backgroundTint="@color/auth_primary"
+                    android:text="●"
+                    android:textAllCaps="false"
+                    android:textColor="@color/auth_on_primary" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/ptz_right"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="64dp"
+                    android:layout_height="40dp"
+                    android:text="→"
+                    android:textAllCaps="false"
+                    app:strokeColor="@color/auth_outline_light" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ptz_down"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="64dp"
+                android:layout_height="40dp"
+                android:layout_marginTop="6dp"
+                android:text="↓"
+                android:textAllCaps="false"
+                app:strokeColor="@color/auth_outline_light" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/ptz_speed"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Speed: 4"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+            android:textColor="@color/white" />
+
+        <SeekBar
+            android:id="@+id/ptz_speed_seek"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="9"
+            android:progress="3" />
+    </LinearLayout>
+
+</FrameLayout>

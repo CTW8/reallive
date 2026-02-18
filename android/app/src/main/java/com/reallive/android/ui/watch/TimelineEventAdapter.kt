@@ -1,9 +1,11 @@
 package com.reallive.android.ui.watch
 
+import android.graphics.drawable.GradientDrawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.reallive.android.R
 import java.text.SimpleDateFormat
@@ -44,17 +46,36 @@ class TimelineEventAdapter(
     }
 
     class EventViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        private val dotView: View = view.findViewById(R.id.event_dot)
         private val titleView: TextView = view.findViewById(R.id.event_title)
         private val timeView: TextView = view.findViewById(R.id.event_time)
         private val scoreView: TextView = view.findViewById(R.id.event_score)
 
         fun bind(item: TimelineEventItem, dateFormat: SimpleDateFormat) {
-            titleView.text = when (item.type.lowercase()) {
-                "person-detected", "person" -> "Person Detected"
-                else -> item.type
+            val normalized = item.type.lowercase(Locale.US)
+            titleView.text = when (normalized) {
+                "person-detected", "person" -> "Person detected"
+                "stream-start" -> "Stream started"
+                "stream-stop" -> "Stream stopped"
+                else -> item.type.replace('-', ' ')
             }
             timeView.text = dateFormat.format(Date(item.tsMs))
-            scoreView.text = "%.2f".format(Locale.US, item.score)
+            scoreView.text = if (item.score > 0.0) {
+                "${(item.score * 100.0).toInt()}%"
+            } else {
+                "-"
+            }
+
+            val dotColor = when (normalized) {
+                "person-detected", "person" -> ContextCompat.getColor(itemView.context, R.color.rl_warning)
+                "stream-start" -> ContextCompat.getColor(itemView.context, R.color.rl_success)
+                "stream-stop" -> ContextCompat.getColor(itemView.context, R.color.rl_error)
+                else -> ContextCompat.getColor(itemView.context, R.color.rl_text_muted)
+            }
+            dotView.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(dotColor)
+            }
         }
     }
 }

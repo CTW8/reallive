@@ -5,9 +5,9 @@ libavcodec/hevc/cabac.o: src/libavcodec/hevc/cabac.c \
   src/libavutil/arm/intmath.h src/libavutil/internal.h \
   src/libavutil/libm.h src/libavutil/mathematics.h \
   src/libavutil/rational.h src/libavutil/intfloat.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/cabac_functions.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/cabac.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/arm/cabac.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/cabac_functions.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/cabac.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/arm/cabac.h \
   src/libavcodec/cabac.h src/libavcodec/hevc/data.h \
   src/libavcodec/hevc/hevc.h src/libavcodec/hevc/hevcdec.h \
   src/libavutil/buffer.h src/libavutil/mem_internal.h \

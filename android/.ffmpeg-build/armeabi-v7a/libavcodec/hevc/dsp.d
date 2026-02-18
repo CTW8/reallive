@@ -11,7 +11,7 @@ libavcodec/hevc/dsp.o: src/libavcodec/hevc/dsp.c \
   src/libavcodec/defs.h src/libavcodec/mathops.h \
   src/libavutil/attributes_internal.h src/libavcodec/arm/mathops.h \
   src/libavcodec/vlc.h src/libavcodec/hevc/dsp_template.c \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/get_bits.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/get_bits.h \
   src/libavcodec/hevc/hevcdec.h src/libavutil/buffer.h \
   src/libavcodec/avcodec.h src/libavutil/samplefmt.h \
   src/libavutil/avutil.h src/libavutil/pixfmt.h \
@@ -29,9 +29,9 @@ libavcodec/hevc/dsp.o: src/libavcodec/hevc/dsp.c \
   src/libavcodec/hevc/sei.h src/libavcodec/h2645_sei.h \
   src/libavcodec/aom_film_grain.h src/libavcodec/bytestream.h \
   src/libavcodec/sei.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/bit_depth_template.c \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/mathops.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/rnd_avg.h \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/h26x/h2656_sao_template.c \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/h26x/h2656_inter_template.c \
-  /Volumes/homes/reallive/ffmpeg-8.0.1/libavcodec/h26x/h2656_deblock_template.c
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/bit_depth_template.c \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/mathops.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/rnd_avg.h \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/h26x/h2656_sao_template.c \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/h26x/h2656_inter_template.c \
+  /Users/lizhen/AndroidStudioProjects/reallive/ffmpeg-8.0.1/libavcodec/h26x/h2656_deblock_template.c
