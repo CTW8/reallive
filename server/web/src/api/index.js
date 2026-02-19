@@ -55,6 +55,12 @@ export const authApi = {
       body: JSON.stringify({ username, email, password }),
     })
   },
+  forgotPassword(email) {
+    return request('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+  },
 }
 
 export const cameraApi = {
@@ -128,12 +134,20 @@ export const dashboardApi = {
   },
 }
 
+export * from './design-adapters.js'
+
 export const sessionApi = {
   list(limit = 20, offset = 0) {
     return request(`/sessions?limit=${limit}&offset=${offset}`)
   },
   getActive() {
     return request('/sessions/active')
+  },
+  revoke(id) {
+    return request(`/sessions/${id}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
   },
 }
 
@@ -145,6 +159,20 @@ export const alertApi = {
     if (filters.limit) query.set('limit', filters.limit)
     const qs = query.toString()
     return request(`/alerts${qs ? '?' + qs : ''}`)
+  },
+  listPaged(filters = {}) {
+    const query = new URLSearchParams()
+    query.set('paged', '1')
+    if (filters.type) query.set('type', filters.type)
+    if (filters.type_group) query.set('type_group', filters.type_group)
+    if (filters.status) query.set('status', filters.status)
+    if (filters.q) query.set('q', filters.q)
+    if (filters.since) query.set('since', filters.since)
+    if (filters.until) query.set('until', filters.until)
+    if (filters.limit != null) query.set('limit', String(filters.limit))
+    if (filters.offset != null) query.set('offset', String(filters.offset))
+    if (filters.page != null) query.set('page', String(filters.page))
+    return request(`/alerts?${query.toString()}`)
   },
   getStats() {
     return request('/alerts/stats')
@@ -229,8 +257,22 @@ export const storageApi = {
   getOverview() {
     return request('/storage/overview')
   },
-  getTrend(days = 14) {
-    return request(`/storage/trend?days=${days}`)
+  getCloudConfig() {
+    return request('/storage/cloud-config')
+  },
+  updateCloudConfig(data) {
+    return request('/storage/cloud-config', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  getTrend(days = 14, cameraId = null) {
+    const params = new URLSearchParams()
+    params.set('days', String(days))
+    if (cameraId != null && Number.isFinite(Number(cameraId)) && Number(cameraId) > 0) {
+      params.set('camera_id', String(cameraId))
+    }
+    return request(`/storage/trend?${params.toString()}`)
   },
   getByDevice() {
     return request('/storage/by-device')
@@ -239,6 +281,53 @@ export const storageApi = {
     return request('/storage/policy', {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+  },
+}
+
+export const settingsApi = {
+  getAll() {
+    return request('/settings')
+  },
+  updateProfile(data) {
+    return request('/settings/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+  updatePreferences(data) {
+    return request('/settings/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+  changePassword(currentPassword, newPassword) {
+    return request('/settings/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+  },
+  getAudit(limit = 50) {
+    return request(`/settings/audit?limit=${Math.max(1, Number(limit) || 50)}`)
+  },
+  listUsers(limit = 200, offset = 0) {
+    return request(`/settings/users?limit=${Math.max(1, Number(limit) || 200)}&offset=${Math.max(0, Number(offset) || 0)}`)
+  },
+  createUser(data) {
+    return request('/settings/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  updateUser(id, data) {
+    return request(`/settings/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+  deleteUser(id) {
+    return request(`/settings/users/${id}`, {
+      method: 'DELETE',
     })
   },
 }

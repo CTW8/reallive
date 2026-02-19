@@ -68,11 +68,21 @@ function toBool(value, fallback = false) {
 
 function normalizeRuntimeState(raw) {
   if (!raw || typeof raw !== 'object') return null;
+  const storageTotalGb = Math.max(0, Number(raw.storageTotalGb ?? raw.storage_total_gb ?? 0) || 0);
+  const storageUsedGbRaw = Math.max(0, Number(raw.storageUsedGb ?? raw.storage_used_gb ?? 0) || 0);
+  const storageUsedGb = Math.min(storageTotalGb || Number.MAX_SAFE_INTEGER, storageUsedGbRaw);
+  const storagePct = storageTotalGb > 0
+    ? Math.max(0, Math.min(100, (storageUsedGb / storageTotalGb) * 100))
+    : Math.max(0, Math.min(100, Number(raw.storagePct ?? raw.storage_pct ?? 0) || 0));
   return {
     ts: Number(raw.ts || nowMs()),
     running: toBool(raw.running, false),
     desiredLive: toBool(raw.desiredLive ?? raw.desired_live, false),
     activeLive: toBool(raw.activeLive ?? raw.active_live, false),
+    recordMinFreePercent: Math.max(1, Math.min(95, Number(raw.recordMinFreePercent ?? raw.record_min_free_percent ?? 15) || 15)),
+    storagePct: Math.round(storagePct * 10) / 10,
+    storageUsedGb: Math.round(storageUsedGb * 100) / 100,
+    storageTotalGb: Math.round(storageTotalGb * 100) / 100,
     reason: raw.reason ? String(raw.reason) : null,
     commandSeq: Number(raw.commandSeq ?? raw.command_seq ?? -1),
     updatedAt: nowMs(),
@@ -220,6 +230,50 @@ function publishLiveCommand(streamKey, enable) {
   return true;
 }
 
+function publishRecordPolicyCommand(streamKey, minFreePercent) {
+  if (!isReady()) return false;
+  const token = sanitizeToken(streamKey);
+  if (!token) return false;
+  const min = Math.max(1, Math.min(95, Number(minFreePercent) || 15));
+  seq += 1;
+  const payload = {
+    v: 1,
+    ts: nowMs(),
+    source: 'server',
+    stream_key: streamKey,
+    type: 'record_policy',
+    min_free_percent: min,
+    seq,
+  };
+  const topic = commandTopic(streamKey);
+  client.publish(topic, JSON.stringify(payload), {
+    qos: commandQos,
+    retain: commandRetain,
+  });
+  return true;
+}
+
+function publishStorageQueryCommand(streamKey) {
+  if (!isReady()) return false;
+  const token = sanitizeToken(streamKey);
+  if (!token) return false;
+  seq += 1;
+  const payload = {
+    v: 1,
+    ts: nowMs(),
+    source: 'server',
+    stream_key: streamKey,
+    type: 'storage_query',
+    seq,
+  };
+  const topic = commandTopic(streamKey);
+  client.publish(topic, JSON.stringify(payload), {
+    qos: commandQos,
+    retain: false,
+  });
+  return true;
+}
+
 function getDeviceState(streamKey) {
   const token = sanitizeToken(streamKey);
   if (!token) return null;
@@ -242,6 +296,8 @@ module.exports = {
   isEnabled,
   isReady,
   publishLiveCommand,
+  publishRecordPolicyCommand,
+  publishStorageQueryCommand,
   getDeviceState,
   setStateEventEmitter,
 };

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const config = require('../config');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 
@@ -8,7 +9,11 @@ function uniquePaths(values) {
   const seen = new Set();
   for (const raw of values) {
     if (!raw) continue;
-    const p = path.resolve(raw);
+    const source = String(raw || '').trim();
+    if (!source) continue;
+    const p = path.isAbsolute(source)
+      ? path.resolve(source)
+      : path.resolve(PROJECT_ROOT, source);
     if (seen.has(p)) continue;
     seen.add(p);
     out.push(p);
@@ -17,6 +22,12 @@ function uniquePaths(values) {
 }
 
 const RECORDINGS_ROOTS = (() => {
+  const configRoots = Array.isArray(config?.recordings?.roots)
+    ? config.recordings.roots
+    : [];
+  if (configRoots.length) {
+    return uniquePaths(configRoots.map((v) => String(v || '').trim()).filter(Boolean));
+  }
   const raw = process.env.RECORDINGS_ROOT || '';
   if (raw.trim()) {
     return uniquePaths(raw.split(',').map((v) => v.trim()).filter(Boolean));

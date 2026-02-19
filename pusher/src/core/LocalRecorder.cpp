@@ -121,6 +121,25 @@ bool LocalRecorder::isEnabled() const {
     return initialized_;
 }
 
+bool LocalRecorder::setCleanupPolicy(int minFreePercent, int targetFreePercent) {
+    if (!initialized_) return false;
+    minFreePercent = std::max(1, std::min(95, minFreePercent));
+    targetFreePercent = std::max(minFreePercent + 1, std::min(98, targetFreePercent));
+    {
+        std::lock_guard<std::mutex> lock(policyMutex_);
+        config_.minFreePercent = minFreePercent;
+        config_.targetFreePercent = targetFreePercent;
+    }
+    maybeCleanupOldSegments();
+    return true;
+}
+
+void LocalRecorder::getCleanupPolicy(int& minFreePercent, int& targetFreePercent) const {
+    std::lock_guard<std::mutex> lock(policyMutex_);
+    minFreePercent = config_.minFreePercent;
+    targetFreePercent = config_.targetFreePercent;
+}
+
 bool LocalRecorder::openSegment(int64_t startMs) {
     std::error_code ec;
     std::filesystem::create_directories(streamDir_, ec);
@@ -365,23 +384,32 @@ std::vector<std::string> LocalRecorder::listSegmentsOldestFirst() const {
 
 void LocalRecorder::maybeCleanupOldSegments() {
     if (streamDir_.empty()) return;
+    int minFreePercent = 15;
+    int targetFreePercent = 20;
+    std::string outputDir;
+    {
+        std::lock_guard<std::mutex> lock(policyMutex_);
+        minFreePercent = config_.minFreePercent;
+        targetFreePercent = config_.targetFreePercent;
+        outputDir = config_.outputDir;
+    }
 
     auto getFreePct = [&]() -> double {
         std::error_code ec;
-        auto space = std::filesystem::space(config_.outputDir, ec);
+        auto space = std::filesystem::space(outputDir, ec);
         if (ec || space.capacity == 0) return 100.0;
         return static_cast<double>(space.available) * 100.0 / static_cast<double>(space.capacity);
     };
 
     double freePct = getFreePct();
-    if (freePct >= static_cast<double>(config_.minFreePercent)) {
+    if (freePct >= static_cast<double>(minFreePercent)) {
         return;
     }
 
     auto files = listSegmentsOldestFirst();
     size_t deleted = 0;
     for (size_t i = 0; i < files.size() && files.size() - deleted > 1; i++) {
-        if (freePct >= static_cast<double>(config_.targetFreePercent)) {
+        if (freePct >= static_cast<double>(targetFreePercent)) {
             break;
         }
 

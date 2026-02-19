@@ -1975,4 +1975,19 @@ bool Pipeline::isLivePushActive() const {
     return livePushActive_.load();
 }
 
+bool Pipeline::setRecordCleanupPolicy(int minFreePercent, int targetFreePercent) {
+    if (!recorder_ || !recorder_->isEnabled()) return false;
+    return recorder_->setCleanupPolicy(minFreePercent, targetFreePercent);
+}
+
+bool Pipeline::getRecordCleanupPolicy(int& minFreePercent, int& targetFreePercent) const {
+    if (!recorder_ || !recorder_->isEnabled()) {
+        minFreePercent = config_.record.minFreePercent;
+        targetFreePercent = config_.record.targetFreePercent;
+        return false;
+    }
+    recorder_->getCleanupPolicy(minFreePercent, targetFreePercent);
+    return true;
+}
+
 } // namespace reallive

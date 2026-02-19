@@ -85,6 +85,16 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
   );
+
+  CREATE TABLE IF NOT EXISTS user_settings (
+    user_id INTEGER PRIMARY KEY,
+    profile_json TEXT NOT NULL DEFAULT '{}',
+    notification_json TEXT NOT NULL DEFAULT '{}',
+    system_json TEXT NOT NULL DEFAULT '{}',
+    security_json TEXT NOT NULL DEFAULT '{}',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
 `);
 
 module.exports = db;

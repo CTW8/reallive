@@ -8,8 +8,51 @@ const { getDeviceState } = require('../services/mqttControlService');
 const edgeReplayService = require('../services/edgeReplayService');
 const liveDemandService = require('../services/liveDemandService');
 const { getHistoryOverview, getTimeline, getPlayback, getLatestThumbnail } = require('../services/historyService');
+const config = require('../config');
 
 const router = express.Router();
+
+function normalizeHost(host) {
+  const value = String(host || '').split(',')[0].trim();
+  if (!value) return 'localhost';
+  if (value.startsWith('[')) {
+    const end = value.indexOf(']');
+    return end >= 0 ? value.slice(1, end) : value.replace(/^\[|\]$/g, '');
+  }
+  const first = value.split(':')[0];
+  return first || value;
+}
+
+function applyTemplate(template, data) {
+  return String(template || '').replace(/\{(\w+)\}/g, (_, key) => {
+    if (data[key] == null) return '';
+    return String(data[key]);
+  });
+}
+
+function buildStreamUrls(req, streamKey) {
+  const forwardedHost = req.get('x-forwarded-host');
+  const hostHeader = forwardedHost || req.get('host') || req.hostname || 'localhost';
+  const host = normalizeHost(hostHeader);
+  const httpHost = String(hostHeader || host).split(',')[0].trim() || host;
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+  const secureProto = proto === 'https' ? 'https' : 'http';
+  const templates = config.streamUrls || {};
+  const pushTemplate = templates.pushTemplate || 'rtmp://{host}:1935/live/{streamKey}';
+  const pullFlvTemplate = templates.pullFlvTemplate || '{proto}://{httpHost}/live/{streamKey}.flv';
+  const pullHlsTemplate = templates.pullHlsTemplate || '{proto}://{httpHost}/live/{streamKey}.m3u8';
+  const values = {
+    host,
+    httpHost,
+    streamKey,
+    proto: secureProto,
+  };
+  return {
+    push: applyTemplate(pushTemplate, values),
+    pull_flv: applyTemplate(pullFlvTemplate, values),
+    pull_hls: applyTemplate(pullHlsTemplate, values),
+  };
+}
 
 // All camera routes require authentication
 router.use(authMiddleware);
@@ -29,6 +72,7 @@ router.get('/', (req, res) => {
       status,
       thumbnailUrl,
       device: device || null,
+      stream_urls: buildStreamUrls(req, camera.stream_key),
     };
   });
   res.json(enriched);
@@ -43,7 +87,10 @@ router.post('/', (req, res) => {
 
   const streamKey = uuidv4();
   const camera = Camera.create(req.user.id, name, streamKey, resolution);
-  res.status(201).json(camera);
+  res.status(201).json({
+    ...camera,
+    stream_urls: buildStreamUrls(req, camera.stream_key),
+  });
 });
 
 // PUT /api/cameras/:id
@@ -108,6 +155,7 @@ router.get('/:id/stream', (req, res) => {
       thumbnailUrl,
     },
     stream_key: camera.stream_key,
+    stream_urls: buildStreamUrls(req, camera.stream_key),
     signaling_url: `/ws/signaling`,
     room: `camera-${camera.id}`,
     status: effectiveStatus,

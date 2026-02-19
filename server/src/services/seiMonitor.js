@@ -15,6 +15,17 @@ const monitors = new Map();
 const seiCache = new Map();
 let seiEventEmitter = null;
 
+function normalizeStreamKey(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const noQuery = raw.split('?')[0].split('#')[0];
+  const last = noQuery.includes('/') ? noQuery.slice(noQuery.lastIndexOf('/') + 1) : noQuery;
+  if (last.toLowerCase().endsWith('.flv')) {
+    return last.slice(0, -4);
+  }
+  return last;
+}
+
 function toFiniteNumber(value, fallback = null) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -312,7 +323,11 @@ class FlvSeiParser {
 function updateSeiCache(streamKey, payload) {
   if (!payload || typeof payload !== 'object') return;
   const now = Date.now();
-  const item = seiCache.get(streamKey) || {
+  const payloadStreamKey = normalizeStreamKey(payload?.stream_key || payload?.streamKey || '');
+  const cacheKey = payloadStreamKey || normalizeStreamKey(streamKey);
+  if (!cacheKey) return;
+
+  const item = seiCache.get(cacheKey) || {
     updatedAt: 0,
     telemetry: null,
     telemetryHistory: [],
@@ -341,12 +356,14 @@ function updateSeiCache(streamKey, payload) {
       cpuCorePct: telemetry.cpuCorePct,
       memoryPct: telemetry.memoryPct,
       storagePct: telemetry.storagePct,
+      storageUsedGb: telemetry.storageUsedGb,
+      storageTotalGb: telemetry.storageTotalGb,
     });
     if (item.telemetryHistory.length > TELEMETRY_HISTORY_LIMIT) {
       item.telemetryHistory.splice(0, item.telemetryHistory.length - TELEMETRY_HISTORY_LIMIT);
     }
     if (item.telemetryHistory.length === 1) {
-      console.log(`[SEI Monitor] stream=${streamKey} telemetry online`);
+      console.log(`[SEI Monitor] stream=${cacheKey} telemetry online`);
     }
   }
 
@@ -386,7 +403,7 @@ function updateSeiCache(streamKey, payload) {
     if (emitted.length && typeof seiEventEmitter === 'function') {
       for (const evt of emitted) {
         try {
-          seiEventEmitter(streamKey, evt);
+          seiEventEmitter(cacheKey, evt);
         } catch (err) {
           console.error('[SEI Monitor] event emit failed:', err?.message || err);
         }
@@ -395,7 +412,7 @@ function updateSeiCache(streamKey, payload) {
   }
 
   item.updatedAt = now;
-  seiCache.set(streamKey, item);
+  seiCache.set(cacheKey, item);
 }
 
 async function runMonitorLoop(streamKey, state) {
@@ -471,7 +488,8 @@ function setSeiEventEmitter(emitter) {
 }
 
 function getSeiInfo(streamKey) {
-  const value = seiCache.get(streamKey);
+  const normalized = normalizeStreamKey(streamKey);
+  const value = seiCache.get(normalized) || seiCache.get(String(streamKey || ''));
   if (!value) return null;
   if (Date.now() - Number(value.updatedAt || 0) > SEI_CACHE_STALE_MS) {
     seiCache.delete(streamKey);

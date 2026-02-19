@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
+import { authApi } from '../api/index.js'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -12,17 +13,44 @@ const rememberMe = ref(true)
 const showPassword = ref(false)
 const error = ref('')
 const loading = ref(false)
+const resetOpen = ref(false)
+const resetEmail = ref('')
+const resetLoading = ref(false)
+const resetError = ref('')
+const tempPassword = ref('')
 
 async function handleLogin() {
   error.value = ''
   loading.value = true
   try {
     await auth.login(email.value, password.value)
-    router.push('/')
+    router.push('/dashboard')
   } catch (err) {
     error.value = err.message || 'Login failed'
   } finally {
     loading.value = false
+  }
+}
+
+async function handleForgotPassword() {
+  resetError.value = ''
+  tempPassword.value = ''
+  resetLoading.value = true
+  try {
+    const data = await authApi.forgotPassword(resetEmail.value)
+    tempPassword.value = data?.temporaryPassword || ''
+  } catch (err) {
+    resetError.value = err?.message || 'Failed to reset password'
+  } finally {
+    resetLoading.value = false
+  }
+}
+
+async function copyTempPassword() {
+  if (!tempPassword.value) return
+  try {
+    await navigator.clipboard.writeText(tempPassword.value)
+  } catch {
   }
 }
 </script>
@@ -89,7 +117,7 @@ async function handleLogin() {
             <label class="remember">
               <input v-model="rememberMe" type="checkbox"> Remember me
             </label>
-            <a class="forgot" href="#">Forgot password?</a>
+            <button class="forgot forgot-btn" type="button" @click="resetOpen = true">Forgot password?</button>
           </div>
           <p v-if="error" class="error-msg">{{ error }}</p>
           <button class="btn-primary" type="submit" :disabled="loading">
@@ -103,8 +131,35 @@ async function handleLogin() {
           <button class="social-btn" type="button"><span class="mi" style="font-size:18px">domain</span> SSO</button>
         </div>
         <div class="login-footer">
-          Don't have an account? <router-link to="/register">Contact Admin</router-link>
+          Don't have an account? <router-link to="/register">Create account</router-link>
         </div>
+      </div>
+    </div>
+
+    <div v-if="resetOpen" class="reset-mask" @click.self="resetOpen = false">
+      <div class="reset-modal">
+        <div class="reset-head">
+          <h3>Reset Password</h3>
+          <button class="close-btn" type="button" @click="resetOpen = false"><span class="mi">close</span></button>
+        </div>
+        <form class="reset-body" @submit.prevent="handleForgotPassword">
+          <label>Email</label>
+          <input
+            v-model="resetEmail"
+            type="email"
+            placeholder="your-email@example.com"
+            required
+          >
+          <p v-if="resetError" class="reset-error">{{ resetError }}</p>
+          <div v-if="tempPassword" class="reset-result">
+            <p>Temporary password:</p>
+            <code>{{ tempPassword }}</code>
+            <button type="button" class="copy-btn" @click="copyTempPassword">Copy</button>
+          </div>
+          <button class="btn-primary" type="submit" :disabled="resetLoading">
+            {{ resetLoading ? 'Generating...' : 'Generate Temporary Password' }}
+          </button>
+        </form>
       </div>
     </div>
   </div>
@@ -271,6 +326,12 @@ async function handleLogin() {
   text-decoration: none;
 }
 
+.forgot-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
 .form-row .forgot:hover {
   text-decoration: underline;
 }
@@ -341,6 +402,100 @@ async function handleLogin() {
 
 .login-footer a:hover {
   text-decoration: underline;
+}
+
+.reset-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 7, 18, .65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.reset-modal {
+  width: min(420px, calc(100% - 24px));
+  background: var(--sc);
+  border-radius: var(--r3);
+  border: 1px solid var(--olv);
+  box-shadow: var(--e3);
+}
+
+.reset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--olv);
+}
+
+.reset-head h3 {
+  font: 500 16px/22px 'Roboto', sans-serif;
+}
+
+.close-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--olv);
+  background: transparent;
+  color: var(--on-sfv);
+}
+
+.reset-body {
+  padding: 14px 16px 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.reset-body label {
+  font: 500 12px/16px 'Roboto', sans-serif;
+  color: var(--on-sfv);
+}
+
+.reset-body input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--olv);
+  border-radius: var(--r2);
+  padding: 0 10px;
+  background: var(--sc2);
+  color: var(--on-sf);
+}
+
+.reset-error {
+  color: #ffb4b4;
+  font: 400 12px/16px 'Roboto', sans-serif;
+}
+
+.reset-result {
+  border: 1px solid rgba(125,216,129,.4);
+  background: rgba(125,216,129,.1);
+  border-radius: var(--r2);
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.reset-result p {
+  font: 400 12px/16px 'Roboto', sans-serif;
+  color: var(--on-sfv);
+}
+
+.reset-result code {
+  font: 600 14px/20px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #bbf7d0;
+}
+
+.copy-btn {
+  width: 72px;
+  height: 28px;
+  border-radius: var(--r6);
+  border: 1px solid var(--olv);
+  background: transparent;
+  color: var(--on-sf);
+  font: 500 12px/16px 'Roboto', sans-serif;
 }
 
 @media (max-width: 1023px) {

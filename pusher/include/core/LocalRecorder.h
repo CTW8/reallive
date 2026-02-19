@@ -4,6 +4,7 @@
 #include "platform/IEncoder.h"
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,8 @@ public:
     bool writeVideoPacket(const EncodedPacket& packet);
     void close();
     bool isEnabled() const;
+    bool setCleanupPolicy(int minFreePercent, int targetFreePercent);
+    void getCleanupPolicy(int& minFreePercent, int& targetFreePercent) const;
 
 private:
     bool openSegment(int64_t startMs);
@@ -55,6 +58,7 @@ private:
     int videoStreamIdx_ = -1;
     bool headerWritten_ = false;
     bool initialized_ = false;
+    mutable std::mutex policyMutex_;
 
     int64_t segmentStartWallMs_ = 0;
     int64_t segmentStartPtsUs_ = -1;

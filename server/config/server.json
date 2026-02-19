@@ -6,6 +6,13 @@
     "url": "http://127.0.0.1:8090",
     "timeoutMs": 1500
   },
+  "recordings": {
+    "roots": [
+      "./recordings",
+      "./pusher/recordings",
+      "./pusher/build/recordings"
+    ]
+  },
   "mqttControl": {
     "enabled": true,
     "brokerUrl": "mqtt://127.0.0.1:1883",

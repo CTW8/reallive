@@ -15,6 +15,21 @@ const Session = {
     ).run(sessionId);
   },
 
+  endSessionByUser(sessionId, userId) {
+    const row = db.prepare(`
+      SELECT s.id
+      FROM sessions s
+      JOIN cameras c ON c.id = s.camera_id
+      WHERE s.id = ? AND c.user_id = ?
+      LIMIT 1
+    `).get(sessionId, userId);
+    if (!row) return { updated: false };
+    const result = db.prepare(
+      "UPDATE sessions SET end_time = CURRENT_TIMESTAMP, status = 'completed' WHERE id = ?"
+    ).run(sessionId);
+    return { updated: result.changes > 0 };
+  },
+
   endActiveSessionsForCamera(cameraId) {
     db.prepare(
       "UPDATE sessions SET end_time = CURRENT_TIMESTAMP, status = 'completed' WHERE camera_id = ? AND status = 'active'"

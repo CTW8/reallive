@@ -11,6 +11,7 @@ const sessionRoutes = require('./routes/sessions');
 const alertRoutes = require('./routes/alerts');
 const ruleRoutes = require('./routes/rules');
 const storageRoutes = require('./routes/storage');
+const settingsRoutes = require('./routes/settings');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/alert-rules', ruleRoutes);
 app.use('/api/storage', storageRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

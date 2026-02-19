@@ -44,4 +44,21 @@ router.get('/active', (req, res) => {
   }
 });
 
+// POST /api/sessions/:id/revoke
+router.post('/:id/revoke', (req, res) => {
+  try {
+    const sessionId = Number(req.params.id);
+    if (!Number.isFinite(sessionId) || sessionId <= 0) {
+      return res.status(400).json({ error: 'Invalid session id' });
+    }
+    const result = Session.endSessionByUser(sessionId, req.user.id);
+    if (!result.updated) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to revoke session' });
+  }
+});
+
 module.exports = router;

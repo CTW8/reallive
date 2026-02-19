@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SERVER_ROOT = path.join(__dirname, '..');
+const PROJECT_ROOT = path.join(SERVER_ROOT, '..');
 const DEFAULT_CONFIG_PATH = path.join(SERVER_ROOT, 'config', 'server.json');
 const CONFIG_PATH = process.env.SERVER_CONFIG_PATH || DEFAULT_CONFIG_PATH;
 
@@ -15,6 +16,18 @@ const defaults = {
   edgeReplay: {
     url: '',
     timeoutMs: 1500,
+  },
+  streamUrls: {
+    pushTemplate: 'rtmp://{host}:1935/live/{streamKey}',
+    pullFlvTemplate: '{proto}://{httpHost}/live/{streamKey}.flv',
+    pullHlsTemplate: '{proto}://{httpHost}/live/{streamKey}.m3u8',
+  },
+  recordings: {
+    roots: [
+      path.join(PROJECT_ROOT, 'recordings'),
+      path.join(PROJECT_ROOT, 'pusher', 'recordings'),
+      path.join(PROJECT_ROOT, 'pusher', 'build', 'recordings'),
+    ],
   },
   mqttControl: {
     enabled: false,
@@ -52,6 +65,14 @@ const mergedEdgeReplay = {
   ...defaults.edgeReplay,
   ...(fileConfig.edgeReplay || {}),
 };
+const mergedStreamUrls = {
+  ...defaults.streamUrls,
+  ...(fileConfig.streamUrls || {}),
+};
+const mergedRecordings = {
+  ...defaults.recordings,
+  ...(fileConfig.recordings || {}),
+};
 const mergedMqttControl = {
   ...defaults.mqttControl,
   ...(fileConfig.mqttControl || {}),
@@ -61,6 +82,8 @@ const config = {
   ...defaults,
   ...fileConfig,
   edgeReplay: mergedEdgeReplay,
+  streamUrls: mergedStreamUrls,
+  recordings: mergedRecordings,
   mqttControl: mergedMqttControl,
 };
 

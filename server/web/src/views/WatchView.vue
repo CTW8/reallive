@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
 import { cameraApi } from '../api/index.js'
 import { connectSignaling } from '../api/signaling.js'
+import { heartbeatClassFromLabel, heartbeatLabelFromTs, heartbeatTsFromRuntime } from '../utils/heartbeat.js'
 import mpegts from 'mpegts.js'
 
 const route = useRoute()
@@ -116,6 +117,15 @@ const telemetryStateLabel = computed(() => {
   if (!telemetryInfo.value) return 'SEI offline'
   if (telemetryHistory.value.length >= 2) return `SEI online · ${telemetryHistory.value.length} pts`
   return 'SEI online · single point'
+})
+const heartbeatUpdatedAt = computed(() => {
+  return heartbeatTsFromRuntime(streamInfo.value?.device || null, telemetryUpdatedAt.value)
+})
+const heartbeatLabel = computed(() => {
+  return heartbeatLabelFromTs(heartbeatUpdatedAt.value)
+})
+const heartbeatClass = computed(() => {
+  return heartbeatClassFromLabel(heartbeatLabel.value)
 })
 
 const isLiveMode = computed(() => playbackMode.value === 'live')
@@ -1367,6 +1377,7 @@ function formatUpdatedTime(ts) {
         <h2>{{ streamInfo?.camera?.name || 'Camera Stream' }}</h2>
         <span :class="'status-badge status-' + connectionState">{{ connectionState }}</span>
         <span :class="['mode-badge', isLiveMode ? 'mode-live' : 'mode-history']">{{ isLiveMode ? 'LIVE' : 'HISTORY' }}</span>
+        <span :class="['heartbeat-badge', heartbeatClass]">HB {{ heartbeatLabel }}</span>
         <span v-if="livePersonState?.active" class="person-live-badge">
           PERSON {{ formatScore(livePersonState?.score) }}
         </span>
@@ -1689,6 +1700,33 @@ function formatUpdatedTime(ts) {
   border-radius: 10px;
   padding: 2px 8px;
   letter-spacing: 0.3px;
+}
+
+.heartbeat-badge {
+  font-size: 0.72rem;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  border: 1px solid transparent;
+}
+
+.heartbeat-badge.hb-good {
+  background: rgba(50, 142, 94, 0.16);
+  color: #98e2b0;
+  border-color: rgba(50, 142, 94, 0.35);
+}
+
+.heartbeat-badge.hb-weak {
+  background: rgba(255, 158, 67, 0.16);
+  color: #ffc38e;
+  border-color: rgba(255, 158, 67, 0.35);
+}
+
+.heartbeat-badge.hb-stale {
+  background: rgba(255, 107, 107, 0.16);
+  color: #ffb3b3;
+  border-color: rgba(255, 107, 107, 0.35);
 }
 
 .status-connecting {

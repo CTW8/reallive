@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <algorithm>
+#include <filesystem>
 
 // Minimal JSON parser -- avoids external dependency for a small config file.
 // Handles the flat/nested structure of pusher.json without a full JSON library.
@@ -322,10 +323,13 @@ bool Config::parseJson(const std::string& jsonStr) {
 }
 
 bool Config::loadFromArgs(int argc, char* argv[]) {
+    bool configProvided = false;
+
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
 
         if ((arg == "-c" || arg == "--config") && i + 1 < argc) {
+            configProvided = true;
             if (!loadFromFile(argv[++i])) return false;
         } else if ((arg == "-u" || arg == "--url") && i + 1 < argc) {
             config_.stream.url = argv[++i];
@@ -385,6 +389,27 @@ bool Config::loadFromArgs(int argc, char* argv[]) {
             return false;
         }
     }
+
+    if (!configProvided) {
+        std::vector<std::string> candidates;
+        const char* envCfg = std::getenv("PUSHER_CONFIG_PATH");
+        if (envCfg && std::strlen(envCfg) > 0) {
+            candidates.emplace_back(envCfg);
+        }
+        candidates.emplace_back("./pusher.json");
+        candidates.emplace_back("./config/pusher.json");
+        candidates.emplace_back("../config/pusher.json");
+
+        for (const auto& candidate : candidates) {
+            std::error_code ec;
+            if (!std::filesystem::exists(candidate, ec) || ec) continue;
+            if (loadFromFile(candidate)) {
+                std::cout << "[Config] Auto-loaded config: " << candidate << std::endl;
+                break;
+            }
+        }
+    }
+
     return true;
 }
 

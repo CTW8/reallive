@@ -3,64 +3,68 @@ import { useAuthStore } from '../stores/auth.js'
 
 const routes = [
   {
+    path: '/',
+    redirect: '/dashboard',
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('../views/LoginView.vue'),
-    meta: { guest: true },
+    meta: { guest: true, title: 'Login' },
   },
   {
     path: '/register',
     name: 'Register',
     component: () => import('../views/RegisterView.vue'),
-    meta: { guest: true },
+    meta: { guest: true, title: 'Register' },
   },
   {
-    path: '/',
+    path: '/dashboard',
     name: 'Dashboard',
     component: () => import('../views/DashboardView.vue'),
-    meta: { auth: true },
+    meta: { auth: true, title: 'Dashboard', section: 'Overview' },
   },
   {
     path: '/monitor',
     name: 'Monitor',
     component: () => import('../views/monitor/MonitorView.vue'),
-    meta: { auth: true },
+    meta: { auth: true, title: 'Live View', section: 'Main' },
   },
   {
     path: '/playback',
     name: 'Playback',
     component: () => import('../views/playback/PlaybackView.vue'),
-    meta: { auth: true },
+    meta: { auth: true, title: 'Playback', section: 'Main' },
   },
   {
     path: '/alerts',
     name: 'Alerts',
     component: () => import('../views/alerts/AlertsView.vue'),
-    meta: { auth: true },
+    meta: { auth: true, title: 'Alerts', section: 'Main' },
   },
   {
     path: '/devices',
     name: 'Devices',
     component: () => import('../views/devices/DevicesView.vue'),
-    meta: { auth: true },
+    meta: { auth: true, title: 'Devices', section: 'Manage' },
   },
   {
     path: '/storage',
     name: 'Storage',
     component: () => import('../views/storage/StorageView.vue'),
-    meta: { auth: true },
+    meta: { auth: true, title: 'Storage', section: 'Manage' },
   },
   {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/settings/SettingsView.vue'),
-    meta: { auth: true },
+    meta: { auth: true, title: 'Settings', section: 'System' },
   },
   {
     path: '/watch/:id',
     name: 'Watch',
-    component: () => import('../views/WatchView.vue'),
-    meta: { auth: true },
+    component: () => import('../views/monitor/MonitorView.vue'),
+    meta: { auth: true, title: 'Live View', section: 'Main', hiddenInNav: true },
   },
 ]
 
@@ -75,7 +79,7 @@ router.beforeEach((to) => {
     return { name: 'Login' }
   }
   if (to.meta.guest && auth.isLoggedIn) {
-    return { name: 'Dashboard' }
+    return { path: '/dashboard' }
   }
 })
 

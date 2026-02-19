@@ -1,6 +1,6 @@
 {
     "url": "rtmp://localhost:1935/live",
-    "stream_key": "598c05a2-8386-4dac-8711-2ec9a9b3b2f7",
+    "stream_key": "79fe04b7-3235-4bd5-96ea-712b5cf9bbc1",
     "width": 1280,
     "height": 720,
     "fps": 30,
@@ -22,7 +22,7 @@
     "mqtt_enable": true,
     "mqtt_host": "127.0.0.1",
     "mqtt_port": 1883,
-    "mqtt_client_id": "reallive-pusher-598c05a2-8386-4dac-8711-2ec9a9b3b2f7",
+    "mqtt_client_id": "reallive-pusher-79fe04b7-3235-4bd5-96ea-712b5cf9bbc1",
     "mqtt_topic_prefix": "reallive/device",
     "mqtt_keepalive_sec": 30,
     "mqtt_command_qos": 1,

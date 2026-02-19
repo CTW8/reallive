@@ -22,8 +22,10 @@ router.get('/stats', (req, res) => {
       const status = device
         ? (device.activeLive ? 'streaming' : 'online')
         : (camera.status || 'offline');
-      if (status === 'streaming') cameraStats.streaming += 1;
-      else if (status === 'online') cameraStats.online += 1;
+      if (status === 'streaming') {
+        cameraStats.streaming += 1;
+        cameraStats.online += 1;
+      } else if (status === 'online') cameraStats.online += 1;
       else cameraStats.offline += 1;
     }
     const sessionStats = Session.getStatsForUser(req.user.id);

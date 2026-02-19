@@ -30,6 +30,8 @@ public:
     bool setLivePushEnabled(bool enabled);
     bool isLivePushEnabled() const;
     bool isLivePushActive() const;
+    bool setRecordCleanupPolicy(int minFreePercent, int targetFreePercent);
+    bool getRecordCleanupPolicy(int& minFreePercent, int& targetFreePercent) const;
 
 private:
     void videoLoop();

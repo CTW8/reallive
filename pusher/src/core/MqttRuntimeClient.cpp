@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 
@@ -22,6 +24,16 @@ struct mosquitto_message {
 #endif
 
 namespace reallive {
+
+namespace {
+
+std::string formatNumber(double value, int precision = 1) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(precision) << value;
+    return oss.str();
+}
+
+} // namespace
 
 MqttRuntimeClient::MqttRuntimeClient(const PusherConfig& config, Pipeline* pipeline)
     : config_(config), pipeline_(pipeline) {
@@ -218,6 +230,24 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
 #ifdef REALLIVE_HAS_MQTT
     std::lock_guard<std::mutex> lock(mqttMutex_);
     if (!mosq_) return;
+    int minFreePercent = 0;
+    if (pipeline_) {
+        int ignoredTarget = 0;
+        pipeline_->getRecordCleanupPolicy(minFreePercent, ignoredTarget);
+    }
+    double storagePct = 0.0;
+    double storageUsedGb = 0.0;
+    double storageTotalGb = 0.0;
+    try {
+        const auto space = std::filesystem::space("/");
+        if (space.capacity > 0) {
+            const uint64_t used = space.capacity > space.available ? (space.capacity - space.available) : 0;
+            storageTotalGb = static_cast<double>(space.capacity) / (1024.0 * 1024.0 * 1024.0);
+            storageUsedGb = static_cast<double>(used) / (1024.0 * 1024.0 * 1024.0);
+            storagePct = std::max(0.0, std::min(100.0, static_cast<double>(used) * 100.0 / static_cast<double>(space.capacity)));
+        }
+    } catch (...) {
+    }
 
     std::ostringstream oss;
     oss << "{"
@@ -226,7 +256,11 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
         << "\"stream_key\":\"" << config_.stream.streamKey << "\","
         << "\"running\":" << (pipeline_ && pipeline_->isRunning() ? "true" : "false") << ","
         << "\"desired_live\":" << (pipeline_ && pipeline_->isLivePushEnabled() ? "true" : "false") << ","
-        << "\"active_live\":" << (pipeline_ && pipeline_->isLivePushActive() ? "true" : "false");
+        << "\"active_live\":" << (pipeline_ && pipeline_->isLivePushActive() ? "true" : "false") << ","
+        << "\"record_min_free_percent\":" << minFreePercent << ","
+        << "\"storage_pct\":" << formatNumber(storagePct) << ","
+        << "\"storage_used_gb\":" << formatNumber(storageUsedGb, 2) << ","
+        << "\"storage_total_gb\":" << formatNumber(storageTotalGb, 2);
     if (reason && std::strlen(reason) > 0) {
         oss << ",\"reason\":\"" << reason << "\"";
     }
@@ -292,12 +326,7 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         return;
     }
 
-    std::string enableRaw = jsonValue(payload, "enable");
-    if (enableRaw.empty()) enableRaw = jsonValue(payload, "live");
-    if (enableRaw.empty()) return;
-    const std::string enableNorm = lower(trim(enableRaw));
-    const bool enable = (enableNorm == "1" || enableNorm == "true" ||
-                         enableNorm == "on" || enableNorm == "yes");
+    const std::string type = lower(trim(jsonValue(payload, "type")));
 
     int64_t seq = -1;
     {
@@ -319,6 +348,43 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         commandSeq_ = seq;
     }
 
+    if (type == "record_policy" || type == "record") {
+        std::string minRaw = jsonValue(payload, "min_free_percent");
+        if (minRaw.empty()) minRaw = jsonValue(payload, "record_min_free_percent");
+        if (minRaw.empty()) {
+            publishState("invalid-record-policy", seq);
+            return;
+        }
+        const int minFreePercent = std::max(1, std::atoi(minRaw.c_str()));
+        int currentMin = 15;
+        int currentTarget = 20;
+        pipeline_->getRecordCleanupPolicy(currentMin, currentTarget);
+        const int targetFreePercent = std::max(minFreePercent + 1, std::max(currentTarget, minFreePercent + 5));
+        const bool ok = pipeline_->setRecordCleanupPolicy(minFreePercent, targetFreePercent);
+        if (ok) {
+            std::cout << "[MQTT] Record policy applied: min_free=" << minFreePercent
+                      << "% target_free=" << targetFreePercent
+                      << (seq >= 0 ? (", seq=" + std::to_string(seq)) : "") << std::endl;
+            publishState("record-policy-applied", seq);
+            return;
+        }
+        std::cerr << "[MQTT] Failed to apply record policy: min_free=" << minFreePercent
+                  << " target_free=" << targetFreePercent << std::endl;
+        publishState("record-policy-failed", seq);
+        return;
+    }
+
+    if (type == "storage_query" || type == "state_query" || type == "report_state") {
+        publishState("storage-query", seq);
+        return;
+    }
+
+    std::string enableRaw = jsonValue(payload, "enable");
+    if (enableRaw.empty()) enableRaw = jsonValue(payload, "live");
+    if (enableRaw.empty()) return;
+    const std::string enableNorm = lower(trim(enableRaw));
+    const bool enable = (enableNorm == "1" || enableNorm == "true" ||
+                         enableNorm == "on" || enableNorm == "yes");
     const bool ok = pipeline_->setLivePushEnabled(enable);
     if (ok) {
         std::cout << "[MQTT] Live push command applied: " << (enable ? "on" : "off")
