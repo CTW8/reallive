@@ -274,6 +274,39 @@ function publishStorageQueryCommand(streamKey) {
   return true;
 }
 
+function publishCameraSettingsCommand(streamKey, settings = {}) {
+  if (!isReady()) return false;
+  const token = sanitizeToken(streamKey);
+  if (!token) return false;
+  seq += 1;
+  const payload = {
+    v: 1,
+    ts: nowMs(),
+    source: 'server',
+    stream_key: streamKey,
+    type: 'camera_settings',
+    seq,
+    settings: {
+      motion_enabled: toBool(settings.motion_enabled, true),
+      person_enabled: toBool(settings.person_enabled, true),
+      sound_enabled: toBool(settings.sound_enabled, false),
+      night_vision_enabled: toBool(settings.night_vision_enabled, true),
+      watermark_enabled: toBool(settings.watermark_enabled, true),
+      motion_sensitivity: settings.motion_sensitivity != null ? String(settings.motion_sensitivity) : undefined,
+      sound_sensitivity: settings.sound_sensitivity != null ? String(settings.sound_sensitivity) : undefined,
+      night_vision_mode: settings.night_vision_mode != null ? String(settings.night_vision_mode) : undefined,
+      image_flip_mode: settings.image_flip_mode != null ? String(settings.image_flip_mode) : undefined,
+      detection_zones: settings.detection_zones != null ? String(settings.detection_zones) : undefined,
+    },
+  };
+  const topic = commandTopic(streamKey);
+  client.publish(topic, JSON.stringify(payload), {
+    qos: commandQos,
+    retain: commandRetain,
+  });
+  return true;
+}
+
 function getDeviceState(streamKey) {
   const token = sanitizeToken(streamKey);
   if (!token) return null;
@@ -298,6 +331,7 @@ module.exports = {
   publishLiveCommand,
   publishRecordPolicyCommand,
   publishStorageQueryCommand,
+  publishCameraSettingsCommand,
   getDeviceState,
   setStateEventEmitter,
 };

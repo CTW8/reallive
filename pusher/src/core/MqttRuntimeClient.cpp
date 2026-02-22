@@ -231,9 +231,17 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
     std::lock_guard<std::mutex> lock(mqttMutex_);
     if (!mosq_) return;
     int minFreePercent = 0;
+    bool motionEnabled = true;
+    bool personEnabled = true;
+    bool watermarkEnabled = true;
+    int imageFlipMode = 0;
+    bool nightVisionEnabled = false;
+    int nightVisionMode = 0;
     if (pipeline_) {
         int ignoredTarget = 0;
         pipeline_->getRecordCleanupPolicy(minFreePercent, ignoredTarget);
+        pipeline_->getRuntimeSettings(motionEnabled, personEnabled, watermarkEnabled);
+        pipeline_->getRuntimeVisualSettings(imageFlipMode, nightVisionEnabled, nightVisionMode);
     }
     double storagePct = 0.0;
     double storageUsedGb = 0.0;
@@ -258,6 +266,12 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
         << "\"desired_live\":" << (pipeline_ && pipeline_->isLivePushEnabled() ? "true" : "false") << ","
         << "\"active_live\":" << (pipeline_ && pipeline_->isLivePushActive() ? "true" : "false") << ","
         << "\"record_min_free_percent\":" << minFreePercent << ","
+        << "\"motion_enabled\":" << (motionEnabled ? "true" : "false") << ","
+        << "\"person_enabled\":" << (personEnabled ? "true" : "false") << ","
+        << "\"watermark_enabled\":" << (watermarkEnabled ? "true" : "false") << ","
+        << "\"image_flip_mode\":" << imageFlipMode << ","
+        << "\"night_vision_enabled\":" << (nightVisionEnabled ? "true" : "false") << ","
+        << "\"night_vision_mode\":" << nightVisionMode << ","
         << "\"storage_pct\":" << formatNumber(storagePct) << ","
         << "\"storage_used_gb\":" << formatNumber(storageUsedGb, 2) << ","
         << "\"storage_total_gb\":" << formatNumber(storageTotalGb, 2);
@@ -376,6 +390,79 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
 
     if (type == "storage_query" || type == "state_query" || type == "report_state") {
         publishState("storage-query", seq);
+        return;
+    }
+
+    if (type == "camera_settings" || type == "settings") {
+        std::string motionRaw = jsonValue(payload, "motion_enabled");
+        if (motionRaw.empty()) motionRaw = jsonValue(payload, "motion");
+        std::string personRaw = jsonValue(payload, "person_enabled");
+        if (personRaw.empty()) personRaw = jsonValue(payload, "person");
+        std::string watermarkRaw = jsonValue(payload, "watermark_enabled");
+        if (watermarkRaw.empty()) watermarkRaw = jsonValue(payload, "watermark");
+        std::string flipRaw = jsonValue(payload, "image_flip_mode");
+        if (flipRaw.empty()) flipRaw = jsonValue(payload, "flip_mode");
+        std::string nightEnabledRaw = jsonValue(payload, "night_vision_enabled");
+        if (nightEnabledRaw.empty()) nightEnabledRaw = jsonValue(payload, "night_enabled");
+        std::string nightModeRaw = jsonValue(payload, "night_vision_mode");
+        if (nightModeRaw.empty()) nightModeRaw = jsonValue(payload, "night_mode");
+
+        auto asBool = [](const std::string& raw, bool fallback) {
+            if (raw.empty()) return fallback;
+            const std::string v = MqttRuntimeClient::lower(MqttRuntimeClient::trim(raw));
+            if (v == "1" || v == "true" || v == "yes" || v == "on") return true;
+            if (v == "0" || v == "false" || v == "no" || v == "off") return false;
+            return fallback;
+        };
+
+        bool currentMotion = true;
+        bool currentPerson = true;
+        bool currentWatermark = true;
+        pipeline_->getRuntimeSettings(currentMotion, currentPerson, currentWatermark);
+        int currentFlipMode = 0;
+        bool currentNightEnabled = false;
+        int currentNightMode = 0;
+        pipeline_->getRuntimeVisualSettings(currentFlipMode, currentNightEnabled, currentNightMode);
+
+        const bool motionEnabled = asBool(motionRaw, currentMotion);
+        const bool personEnabled = asBool(personRaw, currentPerson);
+        const bool watermarkEnabled = asBool(watermarkRaw, currentWatermark);
+        const bool nightEnabled = asBool(nightEnabledRaw, currentNightEnabled);
+
+        auto parseFlipMode = [](const std::string& raw, int fallback) {
+            if (raw.empty()) return fallback;
+            const std::string v = MqttRuntimeClient::lower(MqttRuntimeClient::trim(raw));
+            if (v == "normal" || v == "none") return 0;
+            if (v == "flip horizontal" || v == "horizontal" || v == "hflip") return 1;
+            if (v == "flip vertical" || v == "vertical" || v == "vflip") return 2;
+            if (v == "rotate 180" || v == "rotate180" || v == "180") return 3;
+            return fallback;
+        };
+        auto parseNightMode = [](const std::string& raw, int fallback) {
+            if (raw.empty()) return fallback;
+            const std::string v = MqttRuntimeClient::lower(MqttRuntimeClient::trim(raw));
+            if (v == "auto") return 0;
+            if (v == "on") return 1;
+            if (v == "off") return 2;
+            return fallback;
+        };
+        const int flipMode = parseFlipMode(flipRaw, currentFlipMode);
+        const int nightMode = parseNightMode(nightModeRaw, currentNightMode);
+
+        const bool ok = pipeline_->applyRuntimeSettings(motionEnabled, personEnabled, watermarkEnabled);
+        const bool visualOk = pipeline_->applyRuntimeVisualSettings(flipMode, nightEnabled, nightMode);
+        if (ok && visualOk) {
+            std::cout << "[MQTT] Camera settings applied: motion=" << (motionEnabled ? "on" : "off")
+                      << " person=" << (personEnabled ? "on" : "off")
+                      << " watermark=" << (watermarkEnabled ? "on" : "off")
+                      << " flip=" << flipMode
+                      << " night_enabled=" << (nightEnabled ? "on" : "off")
+                      << " night_mode=" << nightMode
+                      << (seq >= 0 ? (", seq=" + std::to_string(seq)) : "") << std::endl;
+            publishState("camera-settings-applied", seq);
+            return;
+        }
+        publishState("camera-settings-failed", seq);
         return;
     }
 

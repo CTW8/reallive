@@ -32,6 +32,10 @@ public:
     bool isLivePushActive() const;
     bool setRecordCleanupPolicy(int minFreePercent, int targetFreePercent);
     bool getRecordCleanupPolicy(int& minFreePercent, int& targetFreePercent) const;
+    bool applyRuntimeSettings(bool motionEnabled, bool personEnabled, bool watermarkEnabled);
+    void getRuntimeSettings(bool& motionEnabled, bool& personEnabled, bool& watermarkEnabled) const;
+    bool applyRuntimeVisualSettings(int imageFlipMode, bool nightVisionEnabled, int nightVisionMode);
+    void getRuntimeVisualSettings(int& imageFlipMode, bool& nightVisionEnabled, int& nightVisionMode) const;
 
 private:
     void videoLoop();
@@ -55,6 +59,12 @@ private:
     std::atomic<double> currentFps_{0.0};
     std::atomic<bool> livePushDesired_{true};
     std::atomic<bool> livePushActive_{false};
+    std::atomic<bool> runtimeMotionEnabled_{true};
+    std::atomic<bool> runtimePersonEnabled_{true};
+    std::atomic<bool> runtimeWatermarkEnabled_{true};
+    std::atomic<int> runtimeImageFlipMode_{0}; // 0 normal, 1 hflip, 2 vflip, 3 rotate180
+    std::atomic<bool> runtimeNightVisionEnabled_{false};
+    std::atomic<int> runtimeNightVisionMode_{0}; // 0 auto, 1 on, 2 off
     mutable std::mutex streamerMutex_;
 
     PusherConfig config_;

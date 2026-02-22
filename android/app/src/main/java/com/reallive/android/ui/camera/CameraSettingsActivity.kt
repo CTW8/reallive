@@ -44,6 +44,11 @@ class CameraSettingsActivity : AppCompatActivity() {
         repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
         cameraName = intent.getStringExtra(EXTRA_CAMERA_NAME) ?: if (zh()) "摄像头" else "Camera"
         cameraId = intent.getLongExtra(EXTRA_CAMERA_ID, -1L)
+        if (cameraId <= 0L) {
+            Toast.makeText(this, tr("Invalid camera", "无效摄像头"), Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
 
         findViewById<View>(R.id.camera_settings_back).setOnClickListener { finish() }
         applyLocalizedTexts()
@@ -53,6 +58,7 @@ class CameraSettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.camera_settings_row_location).setOnClickListener { editLocation() }
         findViewById<View>(R.id.camera_settings_row_resolution).setOnClickListener { pickResolution() }
         findViewById<View>(R.id.camera_settings_row_motion).setOnClickListener { pickMotionSensitivity() }
+        findViewById<View>(R.id.camera_settings_row_person).setOnClickListener { pickPersonDetection() }
         findViewById<View>(R.id.camera_settings_row_sound).setOnClickListener { pickSoundSensitivity() }
         findViewById<View>(R.id.camera_settings_row_night).setOnClickListener { pickNightMode() }
         findViewById<View>(R.id.camera_settings_row_zones).setOnClickListener { pickZonePreset() }
@@ -250,6 +256,23 @@ class CameraSettingsActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun pickPersonDetection() {
+        val current = model ?: return
+        val options = arrayOf(
+            tr("Enabled (AI alerts)", "启用（AI 告警）"),
+            tr("Disabled", "已关闭"),
+        )
+        val index = if (current.settings.person_enabled) 0 else 1
+        MaterialAlertDialogBuilder(this)
+            .setTitle(tr("Person Detection", "人物检测"))
+            .setSingleChoiceItems(options, index) { dialog, which ->
+                dialog.dismiss()
+                saveSettings(current.settings.copy(person_enabled = which == 0))
+            }
+            .setNegativeButton(tr("Cancel", "取消"), null)
+            .show()
+    }
+
     private fun pickNightMode() {
         val current = model ?: return
         val values = arrayOf("Auto", "On", "Off")
@@ -306,11 +329,21 @@ class CameraSettingsActivity : AppCompatActivity() {
                         val result = withContext(Dispatchers.IO) {
                             repository.triggerFirmwareUpdate(cameraId)
                         }
-                        val nextSettings = current.settings.copy(
-                            firmware_version = result.firmwareVersion ?: current.settings.firmware_version,
-                            firmware_update_available = result.firmwareUpdateAvailable ?: false,
-                        )
-                        saveSettings(nextSettings)
+                        model?.let { existing ->
+                            val next = existing.copy(
+                                settings = existing.settings.copy(
+                                    firmware_version = result.firmwareVersion ?: existing.settings.firmware_version,
+                                    firmware_update_available = result.firmwareUpdateAvailable ?: false,
+                                ),
+                            )
+                            model = next
+                            render(next)
+                        }
+                        Toast.makeText(
+                            this@CameraSettingsActivity,
+                            tr("Firmware updated", "固件已更新"),
+                            Toast.LENGTH_SHORT,
+                        ).show()
                     } catch (ex: Exception) {
                         if (!handleAuth(ex)) {
                             Toast.makeText(this@CameraSettingsActivity, tr("Firmware update failed", "固件升级失败"), Toast.LENGTH_SHORT).show()
@@ -395,7 +428,7 @@ class CameraSettingsActivity : AppCompatActivity() {
         location: String? = null,
     ) {
         if (saving) return
-        val current = model ?: return
+        model ?: return
         saving = true
         lifecycleScope.launch {
             try {
@@ -405,7 +438,7 @@ class CameraSettingsActivity : AppCompatActivity() {
                         name = name,
                         resolution = resolution,
                         location = location,
-                        settings = current.settings,
+                        settings = null,
                     )
                 }
                 model = updated

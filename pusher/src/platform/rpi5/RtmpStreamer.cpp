@@ -170,8 +170,8 @@ bool RtmpStreamer::sendVideoPacket(const EncodedPacket& packet) {
     sendCount++;
     totalSendTime += sendTime.count();
     
-    // Log every 30 frames (approx 1 second at 30fps)
-    if (sendCount % 30 == 0) {
+    // Log every 300 frames (approx 10 seconds at 30fps) to reduce noise.
+    if (sendCount % 300 == 0) {
         std::cout << "[RTMP Send] Avg: " << (totalSendTime / sendCount / 1000.0) << "ms, "
                   << "Last: " << (sendTime.count() / 1000.0) << "ms, "
                   << "Size: " << packet.data.size() << "B"

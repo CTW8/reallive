@@ -5,7 +5,8 @@ const Camera = require('../models/camera');
 const CameraSettings = require('../models/camera-settings');
 const { getStreamInfo } = require('../services/srsSync');
 const { getSeiInfo } = require('../services/seiMonitor');
-const { getDeviceState } = require('../services/mqttControlService');
+const mqttControlService = require('../services/mqttControlService');
+const { getDeviceState } = mqttControlService;
 const edgeReplayService = require('../services/edgeReplayService');
 const liveDemandService = require('../services/liveDemandService');
 const { getHistoryOverview, getTimeline, getPlayback, getLatestThumbnail } = require('../services/historyService');
@@ -196,12 +197,17 @@ router.get('/:id/settings', (req, res) => {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const settings = CameraSettings.getByCameraId(camera.id);
+  const device = getDeviceState(camera.stream_key);
+  const runtimeStatus = device
+    ? (device.activeLive ? 'streaming' : 'online')
+    : null;
+  const status = runtimeStatus || camera.status || 'offline';
   return res.json({
     id: camera.id,
     name: camera.name,
     resolution: camera.resolution || '1080p',
     location: camera.location || settings.location || '',
-    status: camera.status || 'offline',
+    status,
     settings,
   });
 });
@@ -226,13 +232,28 @@ router.put('/:id/settings', (req, res) => {
 
   const updatedCamera = Camera.update(camera.id, req.user.id, cameraPatch);
   const settings = CameraSettings.upsert(camera.id, req.body?.settings || req.body || {});
+  let deviceApply = null;
+  if (mqttControlService.isEnabled()) {
+    const published = mqttControlService.publishCameraSettingsCommand(updatedCamera.stream_key, settings);
+    deviceApply = {
+      mqttEnabled: true,
+      mqttReady: mqttControlService.isReady(),
+      published,
+    };
+  }
+  const device = getDeviceState(updatedCamera.stream_key);
+  const runtimeStatus = device
+    ? (device.activeLive ? 'streaming' : 'online')
+    : null;
+  const status = runtimeStatus || updatedCamera.status || 'offline';
   return res.json({
     id: updatedCamera.id,
     name: updatedCamera.name,
     resolution: updatedCamera.resolution || '1080p',
     location: updatedCamera.location || settings.location || '',
-    status: updatedCamera.status || 'offline',
+    status,
     settings,
+    deviceApply,
   });
 });
 

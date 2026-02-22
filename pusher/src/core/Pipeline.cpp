@@ -109,6 +109,79 @@ std::string formatNumber(double value, int precision = 1) {
     return oss.str();
 }
 
+void flipNv12Horizontal(std::vector<uint8_t>& data, int width, int height) {
+    if (width <= 1 || height <= 1) return;
+    const size_t ySize = static_cast<size_t>(width) * static_cast<size_t>(height);
+    const size_t uvSize = ySize / 2;
+    if (data.size() < ySize + uvSize) return;
+    uint8_t* y = data.data();
+    uint8_t* uv = data.data() + ySize;
+
+    for (int row = 0; row < height; ++row) {
+        uint8_t* line = y + static_cast<size_t>(row) * static_cast<size_t>(width);
+        for (int l = 0, r = width - 1; l < r; ++l, --r) {
+            std::swap(line[l], line[r]);
+        }
+    }
+
+    for (int row = 0; row < height / 2; ++row) {
+        uint8_t* line = uv + static_cast<size_t>(row) * static_cast<size_t>(width);
+        for (int l = 0, r = width - 2; l < r; l += 2, r -= 2) {
+            std::swap(line[l], line[r]);
+            std::swap(line[l + 1], line[r + 1]);
+        }
+    }
+}
+
+void flipNv12Vertical(std::vector<uint8_t>& data, int width, int height) {
+    if (width <= 1 || height <= 1) return;
+    const size_t ySize = static_cast<size_t>(width) * static_cast<size_t>(height);
+    const size_t uvSize = ySize / 2;
+    if (data.size() < ySize + uvSize) return;
+    uint8_t* y = data.data();
+    uint8_t* uv = data.data() + ySize;
+
+    std::vector<uint8_t> tmpRow(static_cast<size_t>(width), 0);
+    for (int t = 0, b = height - 1; t < b; ++t, --b) {
+        uint8_t* top = y + static_cast<size_t>(t) * static_cast<size_t>(width);
+        uint8_t* bottom = y + static_cast<size_t>(b) * static_cast<size_t>(width);
+        std::memcpy(tmpRow.data(), top, static_cast<size_t>(width));
+        std::memcpy(top, bottom, static_cast<size_t>(width));
+        std::memcpy(bottom, tmpRow.data(), static_cast<size_t>(width));
+    }
+
+    for (int t = 0, b = (height / 2) - 1; t < b; ++t, --b) {
+        uint8_t* top = uv + static_cast<size_t>(t) * static_cast<size_t>(width);
+        uint8_t* bottom = uv + static_cast<size_t>(b) * static_cast<size_t>(width);
+        std::memcpy(tmpRow.data(), top, static_cast<size_t>(width));
+        std::memcpy(top, bottom, static_cast<size_t>(width));
+        std::memcpy(bottom, tmpRow.data(), static_cast<size_t>(width));
+    }
+}
+
+void applyNightVisionNv12(std::vector<uint8_t>& data, int width, int height) {
+    if (width <= 1 || height <= 1) return;
+    const size_t ySize = static_cast<size_t>(width) * static_cast<size_t>(height);
+    const size_t uvSize = ySize / 2;
+    if (data.size() < ySize + uvSize) return;
+    uint8_t* y = data.data();
+    uint8_t* uv = data.data() + ySize;
+
+    // Boost luminance and flatten shadows/noise.
+    for (size_t i = 0; i < ySize; ++i) {
+        int v = static_cast<int>(y[i]);
+        v = 12 + (v * 11) / 10; // mild gain + lift
+        if (v > 255) v = 255;
+        y[i] = static_cast<uint8_t>(v);
+    }
+
+    // Slight green-ish neutralization in chroma for typical night-vision look.
+    for (size_t i = 0; i + 1 < uvSize; i += 2) {
+        uv[i] = 96;      // U
+        uv[i + 1] = 140; // V
+    }
+}
+
 int64_t wallClockMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()
@@ -1347,6 +1420,12 @@ bool Pipeline::createComponents(const PusherConfig& config) {
 
 bool Pipeline::init(const PusherConfig& config) {
     config_ = config;
+    runtimeMotionEnabled_ = config_.detection.enabled;
+    runtimePersonEnabled_ = config_.detection.enabled;
+    runtimeWatermarkEnabled_ = true;
+    runtimeImageFlipMode_ = 0;
+    runtimeNightVisionEnabled_ = false;
+    runtimeNightVisionMode_ = 0;
 
     if (!createComponents(config)) {
         std::cerr << "[Pipeline] Failed to create components" << std::endl;
@@ -1493,6 +1572,7 @@ void Pipeline::videoLoop() {
     auto lastLogTime = Clock::now();
     auto lastSeiTime = Clock::now() - std::chrono::milliseconds(2000);
     auto lastSeiLogTime = Clock::now() - std::chrono::seconds(10);
+    auto lastSlowLogTime = Clock::now() - std::chrono::seconds(10);
     uint64_t droppedFrames = 0;
     uint64_t totalProcessTime = 0;
     uint64_t maxProcessTime = 0;
@@ -1689,8 +1769,10 @@ void Pipeline::videoLoop() {
 
         auto captureTime = Clock::now();
         const int64_t frameTsMs = normalizeFrameTimestampMs(frame.pts);
+        auto detectOverlayStart = Clock::now();
 
-        if (config_.detection.enabled) {
+        const bool detectEnabled = runtimeMotionEnabled_.load() || runtimePersonEnabled_.load();
+        if (config_.detection.enabled && detectEnabled) {
             Frame frameForDetect = frame;
             {
                 std::lock_guard<std::mutex> lock(detectMutex);
@@ -1718,9 +1800,26 @@ void Pipeline::videoLoop() {
                 );
             }
         }
+        auto detectOverlayEnd = Clock::now();
 
         // 2. Draw timestamp overlay on frame before encoding
-        TextOverlay::drawTimestamp(frame.data.data(), frame.width, frame.height);
+        const int flipMode = runtimeImageFlipMode_.load();
+        if (flipMode == 1 || flipMode == 3) {
+            flipNv12Horizontal(frame.data, frame.width, frame.height);
+        }
+        if (flipMode == 2 || flipMode == 3) {
+            flipNv12Vertical(frame.data, frame.width, frame.height);
+        }
+
+        const bool nightEnabled = runtimeNightVisionEnabled_.load();
+        const int nightMode = runtimeNightVisionMode_.load();
+        if (nightEnabled && nightMode != 2) {
+            applyNightVisionNv12(frame.data, frame.width, frame.height);
+        }
+
+        if (runtimeWatermarkEnabled_.load()) {
+            TextOverlay::drawTimestamp(frame.data.data(), frame.width, frame.height);
+        }
 
         // 3. Encode the frame
         auto encodeStart = Clock::now();
@@ -1740,7 +1839,7 @@ void Pipeline::videoLoop() {
             const SystemTelemetry telemetry = usageSampler.sample();
             PersonBox personSnapshot;
             std::vector<PersonBox> eventSnapshot;
-            if (config_.detection.enabled) {
+            if (config_.detection.enabled && (runtimeMotionEnabled_.load() || runtimePersonEnabled_.load())) {
                 std::lock_guard<std::mutex> lock(detectMutex);
                 personSnapshot = latestPerson;
                 eventSnapshot = pendingPersonEvents;
@@ -1776,6 +1875,7 @@ void Pipeline::videoLoop() {
             }
         }
 
+        auto enqueueStart = Clock::now();
         {
             std::lock_guard<std::mutex> lock(sendMutex);
             if (sendQueue.size() >= kSendQueueMax) {
@@ -1799,6 +1899,7 @@ void Pipeline::videoLoop() {
             sendQueue.push_back(std::move(packet));
         }
         sendCv.notify_one();
+        auto enqueueEnd = Clock::now();
 
         // 计算处理时间
         auto frameEnd = Clock::now();
@@ -1815,12 +1916,20 @@ void Pipeline::videoLoop() {
         }
 
         // 如果持续处理慢，记录丢帧
+        const auto detectOverlayUs = std::chrono::duration_cast<std::chrono::microseconds>(detectOverlayEnd - detectOverlayStart).count();
+        const auto enqueueUs = std::chrono::duration_cast<std::chrono::microseconds>(enqueueEnd - enqueueStart).count();
         if (processTime > maxProcessThreshold) {
             droppedFrames++;
-            if (droppedFrames % 30 == 0) {
-                std::cerr << "[Pipeline] WARNING: Frame processing too slow (" 
-                          << processTime.count() / 1000 << "ms), dropped " 
-                          << droppedFrames << " frames so far" << std::endl;
+            if (now - lastSlowLogTime >= std::chrono::seconds(2)) {
+                std::cerr << "[Pipeline Slow] total=" << (processTime.count() / 1000.0) << "ms"
+                          << " capture_wait=" << (lastCaptureWait / 1000.0) << "ms"
+                          << " detect_overlay=" << (detectOverlayUs / 1000.0) << "ms"
+                          << " encode=" << (encodeTime.count() / 1000.0) << "ms"
+                          << " enqueue=" << (enqueueUs / 1000.0) << "ms"
+                          << " capture_drop=" << captureDropped.load()
+                          << " send_drop=" << sendDropped.load()
+                          << std::endl;
+                lastSlowLogTime = now;
             }
         }
 
@@ -2008,6 +2117,34 @@ bool Pipeline::getRecordCleanupPolicy(int& minFreePercent, int& targetFreePercen
     }
     recorder_->getCleanupPolicy(minFreePercent, targetFreePercent);
     return true;
+}
+
+bool Pipeline::applyRuntimeSettings(bool motionEnabled, bool personEnabled, bool watermarkEnabled) {
+    runtimeMotionEnabled_ = motionEnabled;
+    runtimePersonEnabled_ = personEnabled;
+    runtimeWatermarkEnabled_ = watermarkEnabled;
+    return true;
+}
+
+void Pipeline::getRuntimeSettings(bool& motionEnabled, bool& personEnabled, bool& watermarkEnabled) const {
+    motionEnabled = runtimeMotionEnabled_.load();
+    personEnabled = runtimePersonEnabled_.load();
+    watermarkEnabled = runtimeWatermarkEnabled_.load();
+}
+
+bool Pipeline::applyRuntimeVisualSettings(int imageFlipMode, bool nightVisionEnabled, int nightVisionMode) {
+    const int flip = std::max(0, std::min(3, imageFlipMode));
+    const int night = std::max(0, std::min(2, nightVisionMode));
+    runtimeImageFlipMode_ = flip;
+    runtimeNightVisionEnabled_ = nightVisionEnabled;
+    runtimeNightVisionMode_ = night;
+    return true;
+}
+
+void Pipeline::getRuntimeVisualSettings(int& imageFlipMode, bool& nightVisionEnabled, int& nightVisionMode) const {
+    imageFlipMode = runtimeImageFlipMode_.load();
+    nightVisionEnabled = runtimeNightVisionEnabled_.load();
+    nightVisionMode = runtimeNightVisionMode_.load();
 }
 
 } // namespace reallive
