@@ -122,6 +122,12 @@ data class DeviceStateDto(
     val autoPolicy: String? = null,
     val autoMinLevel: Int? = null,
     val autoMaxLevel: Int? = null,
+    val ptzAction: String? = null,
+    val ptzSpeed: Int? = null,
+    val ptzZoomStep: Int? = null,
+    val ptzZoomLevel: Int? = null,
+    val ptzPreset: String? = null,
+    val ptzUpdatedAt: Long? = null,
 )
 
 data class EffectiveProfileDto(
@@ -199,11 +205,32 @@ data class SeiCameraConfigDto(
     val bitrate: Long? = null,
 )
 
+data class SeiPtzDto(
+    val simulated: Boolean? = null,
+    val status: String? = null,
+    val action: String? = null,
+    val speed: Int? = null,
+    @SerializedName(value = "zoomStep", alternate = ["zoom_step"])
+    val zoomStep: Int? = null,
+    @SerializedName(value = "zoomLevel", alternate = ["zoom_level"])
+    val zoomLevel: Int? = null,
+    val preset: String? = null,
+    @SerializedName(value = "updatedAt", alternate = ["updated_at"])
+    val updatedAt: Long? = null,
+    @SerializedName(value = "panDeg", alternate = ["pan_deg"])
+    val panDeg: Double? = null,
+    @SerializedName(value = "tiltDeg", alternate = ["tilt_deg"])
+    val tiltDeg: Double? = null,
+    @SerializedName(value = "rollDeg", alternate = ["roll_deg"])
+    val rollDeg: Double? = null,
+)
+
 data class SeiInfoDto(
     val updatedAt: Long? = null,
     val telemetry: SeiTelemetryDto? = null,
     val telemetryHistory: List<SeiTelemetryDto> = emptyList(),
     val cameraConfig: SeiCameraConfigDto? = null,
+    val ptz: SeiPtzDto? = null,
     val person: SeiPersonDto? = null,
     val personEvents: List<HistoryTimelineEventDto> = emptyList(),
 )
@@ -224,6 +251,29 @@ data class WatchHeartbeatResponse(
 data class WatchStopResponse(
     val ok: Boolean,
     val viewers: Int? = null,
+)
+
+data class PtzControlRequest(
+    val action: String,
+    val speed: Int? = null,
+    val zoom_step: Int? = null,
+    val zoom_level: Int? = null,
+    val preset: String? = null,
+)
+
+data class PtzControlResponse(
+    val ok: Boolean = false,
+    val cameraId: Long? = null,
+    val streamKey: String? = null,
+    val action: String? = null,
+    val speed: Int? = null,
+    val zoom_step: Int? = null,
+    val zoom_level: Int? = null,
+    val preset: String? = null,
+    val mqttEnabled: Boolean? = null,
+    val mqttReady: Boolean? = null,
+    val published: Boolean? = null,
+    val device: DeviceStateDto? = null,
 )
 
 data class ReplayStopResponse(

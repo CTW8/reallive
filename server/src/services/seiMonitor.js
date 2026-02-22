@@ -308,6 +308,29 @@ function normalizePersonEvent(event = {}, fallbackTs) {
   };
 }
 
+function normalizePtzState(ptz = {}, fallbackTs) {
+  if (!ptz || typeof ptz !== 'object') return null;
+  const actionRaw = String(ptz.action ?? ptz.ptz_action ?? 'stop').trim().toLowerCase();
+  const action = actionRaw || 'stop';
+  const speedRaw = Math.round(toFiniteNumber(ptz.speed ?? ptz.ptz_speed, 5) || 5);
+  const zoomStepRaw = Math.round(toFiniteNumber(ptz.zoom_step ?? ptz.zoomStep ?? ptz.ptz_zoom_step, 1) || 1);
+  const zoomLevelRaw = Math.round(toFiniteNumber(ptz.zoom_level ?? ptz.zoomLevel ?? ptz.ptz_zoom_level, 50) || 50);
+  const clampInt = (value, min, max) => Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+  return {
+    simulated: Boolean(ptz.simulated ?? true),
+    status: String(ptz.status || 'online'),
+    action,
+    speed: clampInt(speedRaw, 1, 10),
+    zoomStep: clampInt(zoomStepRaw, 1, 10),
+    zoomLevel: clampInt(zoomLevelRaw, 0, 100),
+    preset: String(ptz.preset ?? ptz.ptz_preset ?? ''),
+    updatedAt: normalizeTimestampMs(ptz.updated_at ?? ptz.updatedAt ?? ptz.ts, fallbackTs),
+    panDeg: toFiniteNumber(ptz.pan_deg ?? ptz.panDeg, null),
+    tiltDeg: toFiniteNumber(ptz.tilt_deg ?? ptz.tiltDeg, null),
+    rollDeg: toFiniteNumber(ptz.roll_deg ?? ptz.rollDeg, null),
+  };
+}
+
 function extractSeiJson(rbsp) {
   let offset = 0;
   while (offset < rbsp.length) {
@@ -537,6 +560,7 @@ function updateSeiCache(streamKey, payload) {
     telemetrySamples: 0,
     cameraConfig: null,
     configurable: null,
+    ptz: null,
     person: null,
     personEvents: [],
     personEventDedup: new Set(),
@@ -622,6 +646,12 @@ function updateSeiCache(streamKey, payload) {
   }
   if (payload.configurable && typeof payload.configurable === 'object') {
     item.configurable = payload.configurable;
+  }
+  const ptzObj = payload.ptz && typeof payload.ptz === 'object'
+    ? payload.ptz
+    : (payload.device && payload.device.ptz && typeof payload.device.ptz === 'object' ? payload.device.ptz : null);
+  if (ptzObj) {
+    item.ptz = normalizePtzState(ptzObj, payloadTs);
   }
 
   if (payload.person && typeof payload.person === 'object') {
@@ -760,6 +790,7 @@ function getSeiInfo(streamKey) {
     })),
     cameraConfig: value.cameraConfig ? { ...value.cameraConfig } : null,
     configurable: value.configurable ? { ...value.configurable } : null,
+    ptz: value.ptz ? { ...value.ptz } : null,
     person: value.person ? { ...value.person, bbox: { ...(value.person.bbox || {}) } } : null,
     personEvents: value.personEvents.slice(-50).map((evt) => ({
       ...evt,

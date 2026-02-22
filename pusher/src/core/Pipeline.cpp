@@ -1380,9 +1380,21 @@ std::string buildTelemetryPayload(
     double outFps,
     double outBitrateBps,
     int64_t nowMs,
+    const std::string& ptzAction,
+    int ptzSpeed,
+    int ptzZoomStep,
+    int ptzZoomLevel,
+    const std::string& ptzPreset,
+    int64_t ptzUpdatedAtMs,
     const PersonBox& personState,
     const std::vector<PersonBox>& personEvents
 ) {
+    constexpr double kTwoPi = 6.283185307179586;
+    const double phase = std::fmod(static_cast<double>(nowMs) / 1000.0, 120.0) / 120.0 * kTwoPi;
+    const int fakePanDeg = static_cast<int>(std::llround(std::sin(phase) * 90.0));
+    const int fakeTiltDeg = static_cast<int>(std::llround(std::cos(phase * 1.7) * 30.0));
+    const int64_t ptzTs = ptzUpdatedAtMs > 0 ? ptzUpdatedAtMs : nowMs;
+
     std::ostringstream oss;
     oss << "{"
         << "\"v\":1,"
@@ -1432,6 +1444,19 @@ std::string buildTelemetryPayload(
             << "\"gop\":{\"min\":10,\"max\":120,\"step\":5},"
             << "\"person_score_threshold\":{\"min\":0.3,\"max\":0.95,\"step\":0.01},"
             << "\"detect_infer_interval_ms\":{\"min\":10,\"max\":1000,\"step\":10}"
+        << "},"
+        << "\"ptz\":{"
+            << "\"simulated\":true,"
+            << "\"status\":\"online\","
+            << "\"action\":\"" << jsonEscape(ptzAction) << "\","
+            << "\"speed\":" << ptzSpeed << ","
+            << "\"zoom_step\":" << ptzZoomStep << ","
+            << "\"zoom_level\":" << ptzZoomLevel << ","
+            << "\"preset\":\"" << jsonEscape(ptzPreset) << "\","
+            << "\"updated_at\":" << ptzTs << ","
+            << "\"pan_deg\":" << fakePanDeg << ","
+            << "\"tilt_deg\":" << fakeTiltDeg << ","
+            << "\"roll_deg\":0"
         << "},"
         << "\"person\":{"
             << "\"active\":" << (personState.valid ? "true" : "false") << ","
@@ -2110,6 +2135,20 @@ void Pipeline::videoLoop() {
         auto now = Clock::now();
         if (now - lastSeiTime >= seiInterval) {
             const SystemTelemetry telemetry = usageSampler.sample();
+            std::string ptzAction;
+            std::string ptzPreset;
+            int ptzSpeed = 5;
+            int ptzZoomStep = 1;
+            int ptzZoomLevel = 50;
+            int64_t ptzUpdatedAtMs = 0;
+            getRuntimePtzState(
+                ptzAction,
+                ptzSpeed,
+                ptzZoomStep,
+                ptzZoomLevel,
+                ptzPreset,
+                ptzUpdatedAtMs
+            );
             PersonBox personSnapshot;
             std::vector<PersonBox> eventSnapshot;
             if (config_.detection.enabled && (runtimeMotionEnabled_.load() || runtimePersonEnabled_.load())) {
@@ -2124,6 +2163,12 @@ void Pipeline::videoLoop() {
                 currentFps_.load(),
                 currentOutBitrateBps,
                 wallClockMs(),
+                ptzAction,
+                ptzSpeed,
+                ptzZoomStep,
+                ptzZoomLevel,
+                ptzPreset,
+                ptzUpdatedAtMs,
                 personSnapshot,
                 eventSnapshot
             );
@@ -2708,6 +2753,58 @@ void Pipeline::getRuntimeStreamPolicy(
     currentLevel = runtimeProfileLevel_.load();
     targetFps = runtimeProfileTargetFps_.load();
     targetBitrateKbps = runtimeProfileTargetBitrateKbps_.load();
+}
+
+bool Pipeline::applyRuntimePtzCommand(
+    const std::string& action,
+    int speed,
+    int zoomStep,
+    int zoomLevel,
+    const std::string& preset
+) {
+    std::string safeAction = action;
+    std::transform(safeAction.begin(), safeAction.end(), safeAction.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (safeAction.empty()) return false;
+    speed = std::max(1, std::min(10, speed));
+    zoomStep = std::max(1, std::min(10, zoomStep));
+    zoomLevel = std::max(0, std::min(100, zoomLevel));
+
+    {
+        std::lock_guard<std::mutex> lock(runtimePtzMutex_);
+        runtimePtzAction_ = safeAction;
+        runtimePtzSpeed_ = speed;
+        runtimePtzZoomStep_ = zoomStep;
+        if (safeAction == "zoom_in") {
+            runtimePtzZoomLevel_ = std::max(0, std::min(100, runtimePtzZoomLevel_ + zoomStep * 5));
+        } else if (safeAction == "zoom_out") {
+            runtimePtzZoomLevel_ = std::max(0, std::min(100, runtimePtzZoomLevel_ - zoomStep * 5));
+        } else if (safeAction == "zoom_set") {
+            runtimePtzZoomLevel_ = zoomLevel;
+        } else if (zoomLevel >= 0) {
+            runtimePtzZoomLevel_ = zoomLevel;
+        }
+        runtimePtzPreset_ = preset;
+        runtimePtzUpdatedAtMs_ = wallClockMs();
+    }
+    return true;
+}
+
+void Pipeline::getRuntimePtzState(
+    std::string& action,
+    int& speed,
+    int& zoomStep,
+    int& zoomLevel,
+    std::string& preset,
+    int64_t& updatedAtMs
+) const {
+    std::lock_guard<std::mutex> lock(runtimePtzMutex_);
+    action = runtimePtzAction_;
+    speed = runtimePtzSpeed_;
+    zoomStep = runtimePtzZoomStep_;
+    zoomLevel = runtimePtzZoomLevel_;
+    preset = runtimePtzPreset_;
+    updatedAtMs = runtimePtzUpdatedAtMs_;
 }
 
 } // namespace reallive

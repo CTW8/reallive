@@ -465,6 +465,92 @@ router.post('/:id/watch/stop', async (req, res) => {
   res.json(state);
 });
 
+// POST /api/cameras/:id/ptz
+router.post('/:id/ptz', (req, res) => {
+  const camera = Camera.findById(req.params.id);
+  if (!camera) {
+    return res.status(404).json({ error: 'Camera not found' });
+  }
+  if (camera.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const action = String(req.body?.action || req.body?.command || '').trim().toLowerCase();
+  const validActions = new Set([
+    'up',
+    'down',
+    'left',
+    'right',
+    'up_left',
+    'up_right',
+    'down_left',
+    'down_right',
+    'stop',
+    'home',
+    'zoom_in',
+    'zoom_out',
+    'zoom_set',
+    'preset',
+  ]);
+  if (!validActions.has(action)) {
+    return res.status(400).json({ error: 'Invalid PTZ action' });
+  }
+
+  const speedRaw = req.body?.speed;
+  const speed = speedRaw == null ? 5 : Number(speedRaw);
+  if (!Number.isFinite(speed)) {
+    return res.status(400).json({ error: 'speed must be a number' });
+  }
+  const safeSpeed = Math.max(1, Math.min(10, Math.round(speed)));
+
+  let zoomLevel = null;
+  if (req.body?.zoom_level != null) {
+    const n = Number(req.body.zoom_level);
+    if (!Number.isFinite(n)) {
+      return res.status(400).json({ error: 'zoom_level must be a number' });
+    }
+    zoomLevel = Math.max(0, Math.min(100, Math.round(n)));
+  }
+
+  const zoomStepRaw = req.body?.zoom_step;
+  const zoomStep = zoomStepRaw == null ? 1 : Number(zoomStepRaw);
+  if (!Number.isFinite(zoomStep)) {
+    return res.status(400).json({ error: 'zoom_step must be a number' });
+  }
+  const safeZoomStep = Math.max(1, Math.min(10, Math.round(zoomStep)));
+
+  const preset = req.body?.preset != null ? String(req.body.preset).trim() : null;
+  const published = mqttControlService.publishPtzCommand(camera.stream_key, {
+    action,
+    speed: safeSpeed,
+    zoom_step: safeZoomStep,
+    zoom_level: zoomLevel,
+    preset,
+  });
+  if (mqttControlService.isEnabled() && !published) {
+    return res.status(503).json({
+      error: 'PTZ command publish failed',
+      mqttEnabled: true,
+      mqttReady: mqttControlService.isReady(),
+    });
+  }
+
+  return res.json({
+    ok: true,
+    cameraId: camera.id,
+    streamKey: camera.stream_key,
+    action,
+    speed: safeSpeed,
+    zoom_step: safeZoomStep,
+    zoom_level: zoomLevel,
+    preset,
+    mqttEnabled: mqttControlService.isEnabled(),
+    mqttReady: mqttControlService.isReady(),
+    published,
+    device: getDeviceState(camera.stream_key),
+  });
+});
+
 // GET /api/cameras/:id/history/overview
 router.get('/:id/history/overview', async (req, res) => {
   const camera = Camera.findById(req.params.id);

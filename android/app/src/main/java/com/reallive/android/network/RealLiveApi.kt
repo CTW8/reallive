@@ -66,6 +66,12 @@ interface RealLiveApi {
         @Body body: Map<String, String>,
     ): WatchStopResponse
 
+    @POST("api/cameras/{id}/ptz")
+    suspend fun sendPtzCommand(
+        @Path("id") cameraId: Long,
+        @Body body: PtzControlRequest,
+    ): PtzControlResponse
+
     @GET("api/cameras/{id}/history/overview")
     suspend fun getHistoryOverview(@Path("id") cameraId: Long): HistoryOverviewDto
 

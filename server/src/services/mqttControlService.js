@@ -110,6 +110,12 @@ function normalizeRuntimeState(raw) {
     autoPolicy: toText(raw.autoPolicy ?? raw.auto_policy, 'balanced'),
     autoMinLevel: Math.max(0, Math.min(4, Number(raw.autoMinLevel ?? raw.auto_min_level ?? 0) || 0)),
     autoMaxLevel: Math.max(0, Math.min(4, Number(raw.autoMaxLevel ?? raw.auto_max_level ?? 4) || 4)),
+    ptzAction: toText(raw.ptzAction ?? raw.ptz_action, 'stop'),
+    ptzSpeed: Math.max(1, Math.min(10, Number(raw.ptzSpeed ?? raw.ptz_speed ?? 5) || 5)),
+    ptzZoomStep: Math.max(1, Math.min(10, Number(raw.ptzZoomStep ?? raw.ptz_zoom_step ?? 1) || 1)),
+    ptzZoomLevel: Math.max(0, Math.min(100, Number(raw.ptzZoomLevel ?? raw.ptz_zoom_level ?? 50) || 50)),
+    ptzPreset: toText(raw.ptzPreset ?? raw.ptz_preset, ''),
+    ptzUpdatedAt: Number(raw.ptzUpdatedAt ?? raw.ptz_updated_at ?? 0) || 0,
     adaptationReason: toText(raw.adaptationReason ?? raw.adaptation_reason, ''),
     storagePct: Math.round(storagePct * 10) / 10,
     storageUsedGb: Math.round(storageUsedGb * 100) / 100,
@@ -387,6 +393,40 @@ function publishCameraSettingsCommand(streamKey, settings = {}) {
   return true;
 }
 
+function publishPtzCommand(streamKey, body = {}) {
+  if (!isReady()) return false;
+  const token = sanitizeToken(streamKey);
+  if (!token) return false;
+  const action = toText(body.action || body.command || '', '').toLowerCase();
+  if (!action) return false;
+  seq += 1;
+  const speed = Math.max(1, Math.min(10, Number(body.speed ?? 5) || 5));
+  const zoomStep = Math.max(1, Math.min(10, Number(body.zoom_step ?? body.zoomStep ?? 1) || 1));
+  const zoomLevel = body.zoom_level != null
+    ? Math.max(0, Math.min(100, Number(body.zoom_level) || 0))
+    : null;
+  const preset = body.preset != null ? String(body.preset).trim() : null;
+  const payload = {
+    v: 1,
+    ts: nowMs(),
+    source: 'server',
+    stream_key: streamKey,
+    type: 'ptz',
+    seq,
+    action,
+    speed,
+    zoom_step: zoomStep,
+    zoom_level: zoomLevel,
+    preset,
+  };
+  const topic = commandTopic(streamKey);
+  client.publish(topic, JSON.stringify(payload), {
+    qos: commandQos,
+    retain: false,
+  });
+  return true;
+}
+
 function getDeviceState(streamKey) {
   const token = sanitizeToken(streamKey);
   if (!token) return null;
@@ -412,6 +452,7 @@ module.exports = {
   publishRecordPolicyCommand,
   publishStorageQueryCommand,
   publishCameraSettingsCommand,
+  publishPtzCommand,
   getDeviceState,
   setStateEventEmitter,
 };

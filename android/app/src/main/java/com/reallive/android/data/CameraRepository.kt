@@ -22,6 +22,8 @@ import com.reallive.android.network.HealthDto
 import com.reallive.android.network.HistoryOverviewDto
 import com.reallive.android.network.HistoryPlaybackDto
 import com.reallive.android.network.HistoryTimelineDto
+import com.reallive.android.network.PtzControlRequest
+import com.reallive.android.network.PtzControlResponse
 import com.reallive.android.network.RealLiveApi
 import com.reallive.android.network.ReplayStopResponse
 import com.reallive.android.network.SettingsAuditLogDto
@@ -130,6 +132,26 @@ class CameraRepository(private val api: RealLiveApi) {
 
     suspend fun stopWatch(cameraId: Long, sessionId: String): WatchStopResponse {
         return api.stopWatch(cameraId, mapOf("sessionId" to sessionId))
+    }
+
+    suspend fun sendPtzCommand(
+        cameraId: Long,
+        action: String,
+        speed: Int? = null,
+        zoomStep: Int? = null,
+        zoomLevel: Int? = null,
+        preset: String? = null,
+    ): PtzControlResponse {
+        return api.sendPtzCommand(
+            cameraId,
+            PtzControlRequest(
+                action = action,
+                speed = speed,
+                zoom_step = zoomStep,
+                zoom_level = zoomLevel,
+                preset = preset,
+            ),
+        )
     }
 
     suspend fun getDashboardStats(): DashboardStatsDto = api.getDashboardStats()

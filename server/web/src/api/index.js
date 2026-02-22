@@ -112,6 +112,12 @@ export const cameraApi = {
       body: JSON.stringify({ sessionId }),
     })
   },
+  ptz(id, body) {
+    return request(`/cameras/${id}/ptz`, {
+      method: 'POST',
+      body: JSON.stringify(body || {}),
+    })
+  },
   getHistoryOverview(id) {
     return request(`/cameras/${id}/history/overview`)
   },

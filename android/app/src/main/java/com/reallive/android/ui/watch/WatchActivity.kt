@@ -1,17 +1,34 @@
 package com.reallive.android.ui.watch
 
 import android.content.Intent
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.graphics.Rect
+import android.media.MediaScannerConnection
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.PixelCopy
 import android.view.View
 import android.widget.TextView
+import android.widget.ImageView
+import android.widget.Toast
+import android.provider.MediaStore
+import android.net.Uri
 import java.text.SimpleDateFormat
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.SystemClock
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
@@ -53,8 +70,11 @@ class WatchActivity : AppCompatActivity() {
     private lateinit var actionSettingsText: TextView
     private lateinit var actionPtzText: TextView
     private lateinit var actionDownloadText: TextView
+    private lateinit var qualityLabel: TextView
     private lateinit var recentEventsTitleText: TextView
     private lateinit var playerView: PlayerSurfaceView
+    private lateinit var controlsPanel: View
+    private lateinit var fullscreenIcon: ImageView
     private lateinit var placeholderIcon: View
     private lateinit var nightOverlay: View
     private lateinit var watermarkText: TextView
@@ -69,6 +89,8 @@ class WatchActivity : AppCompatActivity() {
     private var isFullscreen: Boolean = false
     private var streamFlv: String? = null
     private var streamHls: String? = null
+    private var lastPlayerResolution: String? = null
+    private var lastPlayerReloadAtMs: Long = 0L
     private var telemetryPollActive: Boolean = false
     private var telemetrySource: String = "NONE"
     private var telemetryPollCount: Int = 0
@@ -77,6 +99,9 @@ class WatchActivity : AppCompatActivity() {
     private var cameraId: Long = -1
     private var cameraName: String = "Camera"
     private var streamKey: String = ""
+    private var currentCameraSettings: com.reallive.android.network.CameraSettingsDetailDto? = null
+    private var currentQualityProfile: String = "auto"
+    private val qualityProfiles = listOf("auto", "360p", "540p", "720p", "1080p")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -107,8 +132,11 @@ class WatchActivity : AppCompatActivity() {
         actionSettingsText = findViewById(R.id.watch_action_settings_label)
         actionPtzText = findViewById(R.id.watch_action_ptz_label)
         actionDownloadText = findViewById(R.id.watch_action_download_label)
+        qualityLabel = findViewById(R.id.watch_quality_label)
         recentEventsTitleText = findViewById(R.id.watch_recent_events_title)
         playerView = findViewById(R.id.watch_player_view)
+        controlsPanel = findViewById(R.id.watch_controls_panel)
+        fullscreenIcon = findViewById(R.id.watch_fullscreen_icon)
         placeholderIcon = findViewById(R.id.watch_placeholder_icon)
         nightOverlay = findViewById(R.id.watch_night_overlay)
         watermarkText = findViewById(R.id.watch_watermark)
@@ -116,6 +144,7 @@ class WatchActivity : AppCompatActivity() {
         titleText.text = cameraName
         statusChip.text = if (isChineseLanguage(appConfig.getAppLanguage())) "连接中" else "Connecting"
         applyLocalizedTexts(appConfig.getAppLanguage())
+        updateQualityLabel()
 
         setupActions()
         setupEventList()
@@ -166,20 +195,7 @@ class WatchActivity : AppCompatActivity() {
             )
         }
         findViewById<View>(R.id.btn_watch_capture).setOnClickListener {
-            startActivity(
-                Intent(this, SnapshotGalleryActivity::class.java).apply {
-                    putExtra(SnapshotGalleryActivity.EXTRA_CAMERA_ID, cameraId)
-                    putExtra(SnapshotGalleryActivity.EXTRA_CAMERA_NAME, cameraName)
-                },
-            )
-        }
-        findViewById<View>(R.id.btn_watch_snapshot).setOnClickListener {
-            startActivity(
-                Intent(this, SnapshotGalleryActivity::class.java).apply {
-                    putExtra(SnapshotGalleryActivity.EXTRA_CAMERA_ID, cameraId)
-                    putExtra(SnapshotGalleryActivity.EXTRA_CAMERA_NAME, cameraName)
-                },
-            )
+            captureSnapshot()
         }
         findViewById<View>(R.id.btn_watch_share).setOnClickListener {
             startActivity(
@@ -217,7 +233,7 @@ class WatchActivity : AppCompatActivity() {
             toggleMute()
         }
         findViewById<View>(R.id.btn_watch_quality).setOnClickListener {
-            toggleQuality()
+            openQualityOptions()
         }
         findViewById<View>(R.id.btn_watch_fullscreen).setOnClickListener {
             toggleFullscreen()
@@ -277,6 +293,10 @@ class WatchActivity : AppCompatActivity() {
 
     private fun applyStreamInfo(info: StreamInfoDto) {
         streamKey = info.stream_key
+        currentCameraSettings = info.camera_settings
+        currentQualityProfile = info.camera_settings?.stream_profile?.lowercase(Locale.US)
+            ?.takeIf { qualityProfiles.contains(it) } ?: "auto"
+        updateQualityLabel()
         val status = info.status.orEmpty()
         statusChip.text = when {
             status.equals("online", true) -> if (isChineseLanguage(appConfig.getAppLanguage())) "在线" else "Online"
@@ -287,13 +307,42 @@ class WatchActivity : AppCompatActivity() {
         }
         val srsW = info.srs?.width ?: 0
         val srsH = info.srs?.height ?: 0
-        resolutionChip.text = when {
+        val currentResolution = when {
             srsW > 0 && srsH > 0 -> "${srsW}x${srsH}"
             !info.camera?.resolution.isNullOrBlank() -> info.camera?.resolution ?: "--"
             else -> "--"
         }
+        resolutionChip.text = currentResolution
         applyTelemetryChips(info)
         applyCameraRuntimeSettings(info)
+
+        // Force reconnect when stream resolution changes, so native player re-opens decoder cleanly.
+        maybeReloadPlayerOnResolutionChange(currentResolution)
+    }
+
+    private fun maybeReloadPlayerOnResolutionChange(resolution: String) {
+        if (resolution.isBlank() || resolution == "--") return
+        val prev = lastPlayerResolution
+        if (prev == null) {
+            lastPlayerResolution = resolution
+            return
+        }
+        if (prev.equals(resolution, ignoreCase = true)) return
+
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPlayerReloadAtMs < 4000L) {
+            lastPlayerResolution = resolution
+            return
+        }
+        val url = streamFlv ?: streamHls
+        if (url.isNullOrBlank()) {
+            lastPlayerResolution = resolution
+            return
+        }
+        lastPlayerResolution = resolution
+        lastPlayerReloadAtMs = now
+        Log.i("WatchActivity", "resolution changed $prev -> $resolution, reload player")
+        player?.playLive(url)
     }
 
     private fun applyCameraRuntimeSettings(info: StreamInfoDto) {
@@ -364,15 +413,109 @@ class WatchActivity : AppCompatActivity() {
         icon.alpha = if (micEnabled) 1f else 0.6f
     }
 
-    private fun toggleQuality() {
-        val next = if (streamFlv != null && streamHls != null) {
-            if ((playerView.tag as? String) == "hls") streamFlv else streamHls
-        } else {
-            streamFlv ?: streamHls
+    private fun openQualityOptions() {
+        if (cameraId <= 0L) return
+        val items = arrayOf(
+            tr("Auto (Adaptive Stream)", "自动（自适应）"),
+            tr("Stream: 360p", "码流：360p"),
+            tr("Stream: 540p", "码流：540p"),
+            tr("Stream: 720p", "码流：720p"),
+            tr("Stream: 1080p", "码流：1080p"),
+            tr("Sensor: 720p", "传感器：720p"),
+            tr("Sensor: 1080p", "传感器：1080p"),
+            tr("Sensor: 2K", "传感器：2K"),
+            tr("Sensor: 4K", "传感器：4K"),
+            tr("Advanced Camera Settings", "高级摄像头设置"),
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle(tr("Quality & Resolution", "画质与分辨率"))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> applyStreamProfile("auto")
+                    1 -> applyStreamProfile("360p")
+                    2 -> applyStreamProfile("540p")
+                    3 -> applyStreamProfile("720p")
+                    4 -> applyStreamProfile("1080p")
+                    5 -> applyCameraResolution("720p")
+                    6 -> applyCameraResolution("1080p")
+                    7 -> applyCameraResolution("2K")
+                    8 -> applyCameraResolution("4K")
+                    9 -> {
+                        startActivity(
+                            Intent(this, CameraSettingsActivity::class.java).apply {
+                                putExtra(CameraSettingsActivity.EXTRA_CAMERA_ID, cameraId)
+                                putExtra(CameraSettingsActivity.EXTRA_CAMERA_NAME, cameraName)
+                            },
+                        )
+                    }
+                }
+            }
+            .setNegativeButton(tr("Cancel", "取消"), null)
+            .show()
+    }
+
+    private fun applyStreamProfile(nextProfile: String) {
+        if (cameraId <= 0L) return
+        lifecycleScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val base = currentCameraSettings ?: repository.getCameraSettings(cameraId).settings
+                    val mode = if (nextProfile == "auto") "auto" else "manual"
+                    val manualLevel = when (nextProfile) {
+                        "360p" -> 0
+                        "540p" -> 1
+                        "720p" -> 2
+                        "1080p" -> 4
+                        else -> base.manual_level
+                    }
+                    val patch = base.copy(
+                        stream_profile = nextProfile,
+                        stream_mode = mode,
+                        manual_level = manualLevel,
+                    )
+                    repository.updateCameraSettings(cameraId, settings = patch)
+                    repository.getStreamInfo(cameraId)
+                }
+            }.onSuccess { info ->
+                currentQualityProfile = nextProfile
+                applyStreamInfo(info)
+                Toast.makeText(
+                    this@WatchActivity,
+                    if (isChineseLanguage(appConfig.getAppLanguage())) "分辨率切换到 ${nextProfile.uppercase(Locale.US)}" else "Resolution: ${nextProfile.uppercase(Locale.US)}",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }.onFailure { err ->
+                Toast.makeText(
+                    this@WatchActivity,
+                    err.message ?: "Switch quality failed",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
         }
-        if (!next.isNullOrBlank()) {
-            playerView.tag = if (next == streamHls) "hls" else "flv"
-            player?.playLive(next)
+    }
+
+    private fun applyCameraResolution(resolution: String) {
+        if (cameraId <= 0L) return
+        lifecycleScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    repository.updateCameraSettings(cameraId = cameraId, resolution = resolution)
+                    repository.getStreamInfo(cameraId)
+                }
+            }.onSuccess { info ->
+                applyStreamInfo(info)
+                Toast.makeText(
+                    this@WatchActivity,
+                    if (isChineseLanguage(appConfig.getAppLanguage())) "传感器分辨率: $resolution" else "Sensor resolution: $resolution",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }.onFailure { err ->
+                Toast.makeText(
+                    this@WatchActivity,
+                    err.message ?: "Switch resolution failed",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
         }
     }
 
@@ -383,15 +526,101 @@ class WatchActivity : AppCompatActivity() {
         } else {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
+        applyFullscreenUiState()
     }
 
     override fun onBackPressed() {
         if (isFullscreen) {
             isFullscreen = false
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            applyFullscreenUiState()
             return
         }
         navigateBackByDesign()
+    }
+
+    private fun applyFullscreenUiState() {
+        controlsPanel.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+        fullscreenIcon.setImageResource(R.drawable.ic_rl_fullscreen_24)
+        WindowCompat.setDecorFitsSystemWindows(window, !isFullscreen)
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        if (isFullscreen) {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    private fun updateQualityLabel() {
+        val profile = currentQualityProfile
+        qualityLabel.text = when {
+            profile.equals("auto", true) -> "Auto"
+            profile.isBlank() -> "Auto"
+            else -> profile.uppercase(Locale.US)
+        }
+    }
+
+    private fun captureSnapshot() {
+        if (playerView.width <= 0 || playerView.height <= 0) {
+            Toast.makeText(this, "No video frame", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val bitmap = Bitmap.createBitmap(playerView.width, playerView.height, Bitmap.Config.ARGB_8888)
+        val location = IntArray(2)
+        playerView.getLocationInWindow(location)
+        val srcRect = Rect(
+            location[0],
+            location[1],
+            location[0] + playerView.width,
+            location[1] + playerView.height,
+        )
+        PixelCopy.request(window, srcRect, bitmap, { result ->
+            if (result == PixelCopy.SUCCESS) {
+                lifecycleScope.launch {
+                    val uri = withContext(Dispatchers.IO) { saveSnapshotToGallery(bitmap) }
+                    val msg = if (uri != null) {
+                        if (isChineseLanguage(appConfig.getAppLanguage())) "截图已保存" else "Snapshot saved"
+                    } else {
+                        if (isChineseLanguage(appConfig.getAppLanguage())) "截图保存失败" else "Snapshot save failed"
+                    }
+                    Toast.makeText(this@WatchActivity, msg, Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(this, "Snapshot failed", Toast.LENGTH_SHORT).show()
+            }
+        }, Handler(Looper.getMainLooper()))
+    }
+
+    private fun saveSnapshotToGallery(bitmap: Bitmap): Uri? {
+        val fileName = "reallive_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
+        val resolver = contentResolver
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/RealLive")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
+            resolver.openOutputStream(uri)?.use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+            } ?: return null
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            } else {
+                MediaScannerConnection.scanFile(this, arrayOf(uri.toString()), arrayOf("image/jpeg"), null)
+            }
+            uri
+        } catch (e: Exception) {
+            Log.e("WatchActivity", "save snapshot failed", e)
+            null
+        }
     }
 
     private fun loadTimeline() {
@@ -518,6 +747,10 @@ class WatchActivity : AppCompatActivity() {
         return normalized.startsWith("zh")
     }
 
+    private fun tr(en: String, zh: String): String {
+        return if (isChineseLanguage(appConfig.getAppLanguage())) zh else en
+    }
+
     private fun applyTelemetryChips(info: StreamInfoDto) {
         val seiLive = info.sei?.telemetry
         val seiHistory = info.sei?.telemetryHistory?.lastOrNull()
@@ -572,6 +805,12 @@ class WatchActivity : AppCompatActivity() {
                     "seiHistKbps=${seiHistory?.streamOutBitrateKbps ?: -1.0} " +
                     "seiCfgFps=${seiCfg?.fps ?: -1.0} " +
                     "seiCfgBitrate=${seiCfg?.bitrate ?: -1L} " +
+                    "seiPtzAction=${info.sei?.ptz?.action ?: "null"} " +
+                    "seiPtzSpeed=${info.sei?.ptz?.speed ?: -1} " +
+                    "seiPtzZoom=${info.sei?.ptz?.zoomLevel ?: -1} " +
+                    "seiPtzPan=${info.sei?.ptz?.panDeg ?: -999.0} " +
+                    "seiPtzTilt=${info.sei?.ptz?.tiltDeg ?: -999.0} " +
+                    "seiPtzUpdated=${info.sei?.ptz?.updatedAt ?: -1L} " +
                     "effectiveMode=${info.effectiveProfile?.mode ?: "null"} " +
                     "effectiveProfile=${info.effectiveProfile?.profileOption ?: "null"} " +
                     "effectiveLevel=${info.effectiveProfile?.level ?: -1} " +

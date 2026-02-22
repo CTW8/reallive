@@ -18,6 +18,7 @@ server/data/*.db-shm
 .vscode/
 *.swp
 *.swo
+**/.cxx/
 
 # OS
 .DS_Store

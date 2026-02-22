@@ -253,6 +253,12 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
     int currentLevel = 2;
     int targetFps = 20;
     int targetBitrateKbps = 1200;
+    std::string ptzAction = "stop";
+    int ptzSpeed = 5;
+    int ptzZoomStep = 1;
+    int ptzZoomLevel = 50;
+    std::string ptzPreset;
+    int64_t ptzUpdatedAtMs = 0;
     if (pipeline_) {
         int ignoredTarget = 0;
         pipeline_->getRecordCleanupPolicy(minFreePercent, ignoredTarget);
@@ -279,6 +285,14 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
             currentLevel,
             targetFps,
             targetBitrateKbps
+        );
+        pipeline_->getRuntimePtzState(
+            ptzAction,
+            ptzSpeed,
+            ptzZoomStep,
+            ptzZoomLevel,
+            ptzPreset,
+            ptzUpdatedAtMs
         );
     }
     double storagePct = 0.0;
@@ -326,6 +340,12 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
         << "\"profile_level\":" << currentLevel << ","
         << "\"target_fps\":" << targetFps << ","
         << "\"target_bitrate_kbps\":" << targetBitrateKbps << ","
+        << "\"ptz_action\":\"" << ptzAction << "\","
+        << "\"ptz_speed\":" << ptzSpeed << ","
+        << "\"ptz_zoom_step\":" << ptzZoomStep << ","
+        << "\"ptz_zoom_level\":" << ptzZoomLevel << ","
+        << "\"ptz_preset\":\"" << ptzPreset << "\","
+        << "\"ptz_updated_at\":" << ptzUpdatedAtMs << ","
         << "\"storage_pct\":" << formatNumber(storagePct) << ","
         << "\"storage_used_gb\":" << formatNumber(storageUsedGb, 2) << ","
         << "\"storage_total_gb\":" << formatNumber(storageTotalGb, 2);
@@ -614,6 +634,34 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
             return;
         }
         publishState("camera-settings-failed", seq);
+        return;
+    }
+
+    if (type == "ptz") {
+        const std::string action = lower(trim(jsonValue(payload, "action")));
+        std::string speedRaw = jsonValue(payload, "speed");
+        std::string zoomStepRaw = jsonValue(payload, "zoom_step");
+        std::string zoomLevelRaw = jsonValue(payload, "zoom_level");
+        const std::string preset = trim(jsonValue(payload, "preset"));
+        const int speed = speedRaw.empty() ? 5 : std::max(1, std::min(10, std::atoi(speedRaw.c_str())));
+        const int zoomStep = zoomStepRaw.empty() ? 1 : std::max(1, std::min(10, std::atoi(zoomStepRaw.c_str())));
+        const int zoomLevel = zoomLevelRaw.empty() ? -1 : std::max(0, std::min(100, std::atoi(zoomLevelRaw.c_str())));
+        if (action.empty()) {
+            publishState("ptz-invalid-action", seq);
+            return;
+        }
+        const bool ok = pipeline_->applyRuntimePtzCommand(action, speed, zoomStep, zoomLevel, preset);
+        if (ok) {
+            std::cout << "[MQTT] PTZ command applied: action=" << action
+                      << " speed=" << speed
+                      << " zoom_step=" << zoomStep
+                      << " zoom_level=" << (zoomLevel >= 0 ? std::to_string(zoomLevel) : std::string("n/a"))
+                      << (preset.empty() ? "" : (" preset=" + preset))
+                      << (seq >= 0 ? (", seq=" + std::to_string(seq)) : "") << std::endl;
+            publishState("ptz-applied", seq);
+            return;
+        }
+        publishState("ptz-failed", seq);
         return;
     }
 

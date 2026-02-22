@@ -78,6 +78,21 @@ public:
         int& targetFps,
         int& targetBitrateKbps
     ) const;
+    bool applyRuntimePtzCommand(
+        const std::string& action,
+        int speed,
+        int zoomStep,
+        int zoomLevel,
+        const std::string& preset
+    );
+    void getRuntimePtzState(
+        std::string& action,
+        int& speed,
+        int& zoomStep,
+        int& zoomLevel,
+        std::string& preset,
+        int64_t& updatedAtMs
+    ) const;
 
 private:
     void videoLoop();
@@ -134,6 +149,13 @@ private:
     int runtimeAutoUpHoldSec_ = 25;
     int runtimeAutoDownHoldSec_ = 3;
     mutable std::mutex runtimeStreamMutex_;
+    std::string runtimePtzAction_{"stop"};
+    std::string runtimePtzPreset_{""};
+    int runtimePtzSpeed_ = 5;
+    int runtimePtzZoomStep_ = 1;
+    int runtimePtzZoomLevel_ = 50;
+    int64_t runtimePtzUpdatedAtMs_ = 0;
+    mutable std::mutex runtimePtzMutex_;
 };
 
 } // namespace reallive

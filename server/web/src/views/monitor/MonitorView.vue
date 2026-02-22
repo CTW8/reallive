@@ -470,14 +470,28 @@ async function saveCameraSettings() {
   }
 }
 
+async function sendPtz(action, extra = {}) {
+  const id = Number(selectedCamera.value?.id)
+  if (!Number.isFinite(id)) return
+  try {
+    await cameraApi.ptz(id, { action, speed: 5, ...extra })
+  } catch (err) {
+    showToast(err?.message || 'PTZ failed')
+  }
+}
+
 function onPtz(dir) {
-  showToast(`PTZ ${dir}`)
+  if (dir === 'center') {
+    sendPtz('home')
+    return
+  }
+  sendPtz(dir)
 }
 
 function adjustZoom(delta) {
   const next = Math.max(0, Math.min(100, Number(ptzZoom.value) + Number(delta)))
   ptzZoom.value = next
-  showToast(`PTZ zoom ${next}%`)
+  sendPtz(delta > 0 ? 'zoom_in' : 'zoom_out', { zoom_level: next, zoom_step: 1 })
 }
 
 watch(selectedCameraId, async (next, prev) => {

@@ -32,6 +32,7 @@
             android:tint="@color/white" />
 
         <TextView
+            android:id="@+id/ptz_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -128,6 +129,7 @@
             android:orientation="horizontal">
 
             <ImageButton
+                android:id="@+id/ptz_zoom_out"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
                 android:background="@android:color/transparent"
@@ -145,6 +147,7 @@
                 android:progress="3" />
 
             <ImageButton
+                android:id="@+id/ptz_zoom_in"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
                 android:background="@android:color/transparent"
@@ -162,6 +165,7 @@
             android:orientation="horizontal">
 
             <TextView
+                android:id="@+id/ptz_home"
                 android:layout_width="wrap_content"
                 android:layout_height="32dp"
                 android:background="@color/rl_surface_alt"
@@ -173,6 +177,7 @@
                 android:textColor="@color/white" />
 
             <TextView
+                android:id="@+id/ptz_preset_door"
                 android:layout_width="wrap_content"
                 android:layout_height="32dp"
                 android:layout_marginStart="8dp"
@@ -185,6 +190,7 @@
                 android:textColor="@color/auth_on_surface_variant" />
 
             <TextView
+                android:id="@+id/ptz_preset_road"
                 android:layout_width="wrap_content"
                 android:layout_height="32dp"
                 android:layout_marginStart="8dp"
@@ -197,6 +203,7 @@
                 android:textColor="@color/auth_on_surface_variant" />
 
             <TextView
+                android:id="@+id/ptz_preset_garden"
                 android:layout_width="wrap_content"
                 android:layout_height="32dp"
                 android:layout_marginStart="8dp"
@@ -208,5 +215,15 @@
                 android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
                 android:textColor="@color/auth_on_surface_variant" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/ptz_status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:text="PTZ Ready"
+            android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+            android:textColor="@color/auth_on_surface_variant" />
     </LinearLayout>
 </FrameLayout>

@@ -883,6 +883,69 @@ bool seekDecoder(DecoderSession& s, int64_t seekMs) {
     return true;
 }
 
+bool reconfigureCodecIfNeeded(DecoderSession& s) {
+    if (!s.fmtCtx || s.videoStreamIndex < 0 || !s.codecCtx) return false;
+    AVStream* stream = s.fmtCtx->streams[s.videoStreamIndex];
+    if (!stream || !stream->codecpar) return false;
+
+    const auto* p = stream->codecpar;
+    const bool changed =
+        p->codec_id != s.codecCtx->codec_id ||
+        p->width != s.codecCtx->width ||
+        p->height != s.codecCtx->height ||
+        p->format != s.codecCtx->pix_fmt;
+    if (!changed) return false;
+
+    const AVCodec* codec = avcodec_find_decoder(p->codec_id);
+    if (!codec) {
+        RL_LOGE("reconfigure decoder: decoder not found codec_id=%d", static_cast<int>(p->codec_id));
+        return false;
+    }
+
+    AVCodecContext* newCtx = avcodec_alloc_context3(codec);
+    if (!newCtx) {
+        RL_LOGE("reconfigure decoder: alloc context failed");
+        return false;
+    }
+    int ret = avcodec_parameters_to_context(newCtx, p);
+    if (ret < 0) {
+        RL_LOGE("reconfigure decoder: parameters_to_context failed: %d", ret);
+        avcodec_free_context(&newCtx);
+        return false;
+    }
+    ret = avcodec_open2(newCtx, codec, nullptr);
+    if (ret < 0) {
+        RL_LOGE("reconfigure decoder: avcodec_open2 failed: %d", ret);
+        avcodec_free_context(&newCtx);
+        return false;
+    }
+
+    RL_LOGI(
+        "decoder reconfigure: codec=%d %dx%d fmt=%d -> codec=%d %dx%d fmt=%d",
+        static_cast<int>(s.codecCtx->codec_id),
+        s.codecCtx->width,
+        s.codecCtx->height,
+        s.codecCtx->pix_fmt,
+        static_cast<int>(newCtx->codec_id),
+        newCtx->width,
+        newCtx->height,
+        newCtx->pix_fmt
+    );
+
+    avcodec_free_context(&s.codecCtx);
+    s.codecCtx = newCtx;
+
+    // Force swscale path recreation for new source shape/format.
+    if (s.swsCtx) {
+        sws_freeContext(s.swsCtx);
+        s.swsCtx = nullptr;
+    }
+    s.swsWidth = 0;
+    s.swsHeight = 0;
+    s.swsSrcPixFmt = AV_PIX_FMT_NONE;
+    return true;
+}
+
 bool ensureScaler(DecoderSession& s, AVFrame* srcFrame) {
     const int srcW = srcFrame->width;
     const int srcH = srcFrame->height;
@@ -1101,6 +1164,7 @@ void decodeLoop(NativePlayerContext* ctx) {
         }
 
         if (session.packet->stream_index == session.videoStreamIndex) {
+            reconfigureCodecIfNeeded(session);
             const auto videoPackets = ctx->videoPacketCount.fetch_add(1, std::memory_order_relaxed) + 1;
             session.videoPackets += 1;
             session.videoBytes += static_cast<uint64_t>(session.packet->size > 0 ? session.packet->size : 0);
