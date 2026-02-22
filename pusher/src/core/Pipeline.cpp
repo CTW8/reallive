@@ -1857,6 +1857,7 @@ void Pipeline::videoLoop() {
     constexpr int64_t kOverlayFreshMs = 160;
     int64_t nextEncodeDueMs = 0;
     uint64_t lastSendDropForAdapt = 0;
+    uint64_t lastCaptureDropForAdapt = 0;
     bool autoNightVisionActive = false;
     auto lastAutoNightEval = Clock::now() - std::chrono::seconds(1);
     int activeEncWidth = std::max(2, config_.encoder.width);
@@ -2266,10 +2267,15 @@ void Pipeline::videoLoop() {
 
             const int64_t nowMs = wallClockMs();
             const uint64_t currentSendDrop = sendDropped.load();
+            const uint64_t currentCaptureDrop = captureDropped.load();
             const uint64_t sendDropDelta = currentSendDrop >= lastSendDropForAdapt
                 ? (currentSendDrop - lastSendDropForAdapt)
                 : 0;
+            const uint64_t captureDropDelta = currentCaptureDrop >= lastCaptureDropForAdapt
+                ? (currentCaptureDrop - lastCaptureDropForAdapt)
+                : 0;
             lastSendDropForAdapt = currentSendDrop;
+            lastCaptureDropForAdapt = currentCaptureDrop;
 
             std::string mode;
             std::string policy;
@@ -2304,8 +2310,11 @@ void Pipeline::videoLoop() {
                 const double stableBps = avg10sBps > 0.0 ? avg10sBps : ewmaOutBitrateBps;
                 const bool fpsBad = currentFps_.load() < targetFpsEval * 0.90;
                 const bool fpsGood = currentFps_.load() >= targetFpsEval * 0.98;
+                const bool severeFpsBad = currentFps_.load() < targetFpsEval * 0.80;
+                const bool overloadBad = captureDropDelta > 4;
                 const bool bad = pushActive && (
                     (sendDropDelta > 8) ||
+                    overloadBad ||
                     (sinceSwitch > 8000 && fpsBad)
                 );
                 const bool good = pushActive &&
@@ -2328,7 +2337,9 @@ void Pipeline::videoLoop() {
                 const int policyUpBias = (policy == "stable") ? 8 : (policy == "quality" ? -6 : 0);
                 const int downNeedSec = std::max(1, downHoldSec + policyDownBias);
                 const int upNeedSec = std::max(5, upHoldSec + policyUpBias);
-                const bool canSwitch = sinceSwitch >= static_cast<int64_t>(cooldownSec) * 1000;
+                const bool fastDownAllowed = severeFpsBad || overloadBad;
+                const bool canSwitch = fastDownAllowed || (sinceSwitch >= static_cast<int64_t>(cooldownSec) * 1000);
+                const int effectiveDownNeedSec = fastDownAllowed ? 1 : downNeedSec;
                 const int64_t badMs = runtimeAdaptBadSinceMs_.load() > 0 ? (nowMs - runtimeAdaptBadSinceMs_.load()) : 0;
                 const int64_t goodMs = runtimeAdaptGoodSinceMs_.load() > 0 ? (nowMs - runtimeAdaptGoodSinceMs_.load()) : 0;
 
@@ -2346,6 +2357,8 @@ void Pipeline::videoLoop() {
                               << " goodMs=" << goodMs
                               << " goodNeedMs=" << (upNeedSec * 1000)
                               << " sendDropDelta=" << sendDropDelta
+                              << " captureDropDelta=" << captureDropDelta
+                              << " fastDownAllowed=" << (fastDownAllowed ? "1" : "0")
                               << " fpsNow=" << std::fixed << std::setprecision(2) << currentFps_.load()
                               << " fpsTarget=" << targetFpsEval
                               << " fastKbps=" << static_cast<int>(fastBps / 1000.0)
@@ -2357,7 +2370,7 @@ void Pipeline::videoLoop() {
                 }
 
                 if (canSwitch && runtimeAdaptBadSinceMs_.load() > 0 &&
-                    nowMs - runtimeAdaptBadSinceMs_.load() >= static_cast<int64_t>(downNeedSec) * 1000 &&
+                    nowMs - runtimeAdaptBadSinceMs_.load() >= static_cast<int64_t>(effectiveDownNeedSec) * 1000 &&
                     currentLevel > minLevel) {
                     const int nextLevel = currentLevel - 1;
                     const auto cfg = levelConfig(nextLevel, resolveOutputFps(config_.camera.fps, config_.encoder.fps));
@@ -2371,6 +2384,8 @@ void Pipeline::videoLoop() {
                     runtimeAdaptGoodSinceMs_ = 0;
                     std::cout << "[Adapt] auto downshift -> L" << nextLevel
                               << " reason=network_bad sendDropDelta=" << sendDropDelta
+                              << " captureDropDelta=" << captureDropDelta
+                              << " fpsNow=" << std::fixed << std::setprecision(2) << currentFps_.load()
                               << " outKbps=" << static_cast<int>(currentOutBitrateBps / 1000.0) << std::endl;
                 } else if (canSwitch && runtimeAdaptGoodSinceMs_.load() > 0 &&
                            nowMs - runtimeAdaptGoodSinceMs_.load() >= static_cast<int64_t>(upNeedSec) * 1000 &&
