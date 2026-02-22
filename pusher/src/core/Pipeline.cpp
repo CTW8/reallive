@@ -116,14 +116,22 @@ struct StreamLevelConfig {
     int bitrateKbps;
 };
 
-StreamLevelConfig levelConfig(int level) {
+int resolveOutputFps(int requestedCameraFps, int fallbackEncoderFps) {
+    const int fromCamera = requestedCameraFps > 0 ? requestedCameraFps : 0;
+    const int fromEncoder = fallbackEncoderFps > 0 ? fallbackEncoderFps : 0;
+    const int base = std::max(fromCamera, fromEncoder);
+    return std::max(24, base > 0 ? base : 25);
+}
+
+StreamLevelConfig levelConfig(int level, int outputFps) {
     const int safe = std::max(0, std::min(4, level));
+    const int fps = std::max(24, outputFps);
     switch (safe) {
-    case 0: return {640, 360, 25, 700};
-    case 1: return {960, 540, 25, 1200};
-    case 2: return {1280, 720, 25, 2000};
-    case 3: return {1920, 1080, 25, 2800};
-    default: return {1920, 1080, 25, 4000};
+    case 0: return {640, 360, fps, 700};
+    case 1: return {960, 540, fps, 1200};
+    case 2: return {1280, 720, fps, 2000};
+    case 3: return {1920, 1080, fps, 2800};
+    default: return {1920, 1080, fps, 4000};
     }
 }
 
@@ -1515,13 +1523,16 @@ bool Pipeline::createComponents(const PusherConfig& config) {
 
 bool Pipeline::init(const PusherConfig& config) {
     config_ = config;
+    config_.camera.fps = std::max(24, config_.camera.fps);
+    config_.encoder.fps = std::max(24, config_.encoder.fps);
     runtimeMotionEnabled_ = config_.detection.enabled;
     runtimePersonEnabled_ = config_.detection.enabled;
     runtimeWatermarkEnabled_ = true;
     runtimeImageFlipMode_ = 0;
     runtimeNightVisionEnabled_ = false;
     runtimeNightVisionMode_ = 0;
-    const auto bootLevelCfg = levelConfig(runtimeProfileLevel_.load());
+    const int fixedOutputFps = resolveOutputFps(config_.camera.fps, config_.encoder.fps);
+    const auto bootLevelCfg = levelConfig(runtimeProfileLevel_.load(), fixedOutputFps);
     runtimeProfileTargetWidth_ = bootLevelCfg.width;
     runtimeProfileTargetHeight_ = bootLevelCfg.height;
     runtimeProfileTargetFps_ = bootLevelCfg.fps;
@@ -1844,7 +1855,7 @@ void Pipeline::videoLoop() {
     constexpr size_t kBitrateWindowSize = 10;
     constexpr double kBitrateEwmaAlpha = 0.25;
     constexpr int64_t kOverlayFreshMs = 160;
-    int64_t lastEncodedFrameMs = 0;
+    int64_t nextEncodeDueMs = 0;
     uint64_t lastSendDropForAdapt = 0;
     bool autoNightVisionActive = false;
     auto lastAutoNightEval = Clock::now() - std::chrono::seconds(1);
@@ -1986,10 +1997,17 @@ void Pipeline::videoLoop() {
         const int64_t frameTsMs = normalizeFrameTimestampMs(frame.pts);
 
         const int64_t minIntervalMs = std::max<int64_t>(1, 1000 / targetFps);
-        if (lastEncodedFrameMs > 0 && frameTsMs - lastEncodedFrameMs < minIntervalMs) {
+        if (nextEncodeDueMs <= 0) {
+            nextEncodeDueMs = frameTsMs;
+        }
+        if (frameTsMs < nextEncodeDueMs) {
             continue;
         }
-        lastEncodedFrameMs = frameTsMs;
+        nextEncodeDueMs += minIntervalMs;
+        // If upstream stalls/jumps, re-anchor to current frame to avoid burst catch-up.
+        if (frameTsMs - nextEncodeDueMs > minIntervalMs * 3) {
+            nextEncodeDueMs = frameTsMs + minIntervalMs;
+        }
 
         auto detectOverlayStart = Clock::now();
 
@@ -2342,7 +2360,7 @@ void Pipeline::videoLoop() {
                     nowMs - runtimeAdaptBadSinceMs_.load() >= static_cast<int64_t>(downNeedSec) * 1000 &&
                     currentLevel > minLevel) {
                     const int nextLevel = currentLevel - 1;
-                    const auto cfg = levelConfig(nextLevel);
+                    const auto cfg = levelConfig(nextLevel, resolveOutputFps(config_.camera.fps, config_.encoder.fps));
                     runtimeProfileLevel_ = nextLevel;
                     runtimeProfileTargetWidth_ = cfg.width;
                     runtimeProfileTargetHeight_ = cfg.height;
@@ -2358,7 +2376,7 @@ void Pipeline::videoLoop() {
                            nowMs - runtimeAdaptGoodSinceMs_.load() >= static_cast<int64_t>(upNeedSec) * 1000 &&
                            currentLevel < maxLevel) {
                     const int nextLevel = currentLevel + 1;
-                    const auto cfg = levelConfig(nextLevel);
+                    const auto cfg = levelConfig(nextLevel, resolveOutputFps(config_.camera.fps, config_.encoder.fps));
                     runtimeProfileLevel_ = nextLevel;
                     runtimeProfileTargetWidth_ = cfg.width;
                     runtimeProfileTargetHeight_ = cfg.height;
@@ -2623,7 +2641,7 @@ bool Pipeline::applyRuntimeStreamPolicy(
     }
 
     if (mode == "manual") {
-        const auto cfg = levelConfig(manual);
+        const auto cfg = levelConfig(manual, resolveOutputFps(config_.camera.fps, config_.encoder.fps));
         runtimeProfileLevel_ = manual;
         runtimeProfileTargetWidth_ = cfg.width;
         runtimeProfileTargetHeight_ = cfg.height;
@@ -2636,7 +2654,7 @@ bool Pipeline::applyRuntimeStreamPolicy(
         int current = runtimeProfileLevel_.load();
         if (current < minL) current = minL;
         if (current > maxL) current = maxL;
-        const auto cfg = levelConfig(current);
+        const auto cfg = levelConfig(current, resolveOutputFps(config_.camera.fps, config_.encoder.fps));
         runtimeProfileLevel_ = current;
         runtimeProfileTargetWidth_ = cfg.width;
         runtimeProfileTargetHeight_ = cfg.height;
