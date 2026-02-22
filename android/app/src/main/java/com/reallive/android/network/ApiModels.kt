@@ -58,6 +58,14 @@ data class CameraSettingsDetailDto(
     val night_vision_mode: String = "Auto",
     val image_flip_mode: String = "Normal",
     val watermark_enabled: Boolean = true,
+    val stream_mode: String = "auto",
+    val manual_level: Int = 2,
+    val auto_min_level: Int = 0,
+    val auto_max_level: Int = 4,
+    val auto_policy: String = "balanced",
+    val auto_cooldown_sec: Int = 10,
+    val auto_up_hold_sec: Int = 25,
+    val auto_down_hold_sec: Int = 3,
     val firmware_version: String = "v2.3.8",
     val firmware_update_available: Boolean = true,
 )
@@ -69,6 +77,9 @@ data class CameraSettingsResponse(
     val location: String = "",
     val status: String = "offline",
     val settings: CameraSettingsDetailDto = CameraSettingsDetailDto(),
+    val device: DeviceStateDto? = null,
+    @SerializedName(value = "effective_profile", alternate = ["effectiveProfile"])
+    val effectiveProfile: EffectiveProfileDto? = null,
 )
 
 data class UpdateCameraSettingsRequest(
@@ -102,6 +113,24 @@ data class DeviceStateDto(
     val reason: String? = null,
     val commandSeq: Long? = null,
     val updatedAt: Long? = null,
+    val streamMode: String? = null,
+    val profileLevel: Int? = null,
+    val targetFps: Double? = null,
+    val targetBitrateKbps: Long? = null,
+    val autoPolicy: String? = null,
+    val autoMinLevel: Int? = null,
+    val autoMaxLevel: Int? = null,
+)
+
+data class EffectiveProfileDto(
+    val source: String? = null,
+    val mode: String? = null,
+    val level: Int? = null,
+    val targetFps: Double? = null,
+    val targetBitrateKbps: Long? = null,
+    val autoPolicy: String? = null,
+    val autoMinLevel: Int? = null,
+    val autoMaxLevel: Int? = null,
 )
 
 data class StreamInfoDto(
@@ -117,6 +146,8 @@ data class StreamInfoDto(
     val sei: SeiInfoDto? = null,
     val camera_settings: CameraSettingsDetailDto? = null,
     val device: DeviceStateDto? = null,
+    @SerializedName(value = "effective_profile", alternate = ["effectiveProfile"])
+    val effectiveProfile: EffectiveProfileDto? = null,
     val liveDemand: WatchStartResponse? = null,
 )
 

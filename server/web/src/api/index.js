@@ -79,6 +79,15 @@ export const cameraApi = {
       body: JSON.stringify(data),
     })
   },
+  getSettings(id) {
+    return request(`/cameras/${id}/settings`)
+  },
+  updateSettings(id, data) {
+    return request(`/cameras/${id}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
   remove(id) {
     return request(`/cameras/${id}`, { method: 'DELETE' })
   },

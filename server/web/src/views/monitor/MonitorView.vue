@@ -18,6 +18,20 @@ const watchSessionId = ref('')
 const playbackError = ref('')
 const ptzZoom = ref(50)
 const toastMessage = ref('')
+const cameraSettingsOpen = ref(false)
+const cameraSettingsLoading = ref(false)
+const cameraSettingsSaving = ref(false)
+const cameraSettingsError = ref('')
+const cameraSettingsForm = ref({
+  stream_mode: 'auto',
+  manual_level: 2,
+  auto_min_level: 0,
+  auto_max_level: 4,
+  auto_policy: 'balanced',
+  auto_cooldown_sec: 10,
+  auto_up_hold_sec: 25,
+  auto_down_hold_sec: 3,
+})
 
 const videoRef = ref(null)
 let player = null
@@ -66,6 +80,10 @@ const topFps = computed(() => {
     const clamped = Math.max(0, Math.min(60, srsFps))
     return clamped.toFixed(1)
   }
+  const effectiveFps = Number(streamInfo.value?.effective_profile?.targetFps)
+  if (Number.isFinite(effectiveFps) && effectiveFps > 0) return effectiveFps.toFixed(1)
+  const targetFps = Number(streamInfo.value?.device?.targetFps)
+  if (Number.isFinite(targetFps) && targetFps > 0) return targetFps.toFixed(1)
   return '0.0'
 })
 
@@ -76,7 +94,34 @@ const topBitrate = computed(() => {
   if (Number.isFinite(seiBps) && seiBps > 0) return `${(seiBps / 1000000).toFixed(1)} Mbps`
   const recv30s = Number(streamInfo.value?.srs?.kbps?.recv_30s)
   if (Number.isFinite(recv30s) && recv30s > 0) return `${(recv30s / 1000).toFixed(1)} Mbps`
+  const effectiveKbps = Number(streamInfo.value?.effective_profile?.targetBitrateKbps)
+  if (Number.isFinite(effectiveKbps) && effectiveKbps > 0) return `${(effectiveKbps / 1000).toFixed(1)} Mbps`
+  const targetKbps = Number(streamInfo.value?.device?.targetBitrateKbps)
+  if (Number.isFinite(targetKbps) && targetKbps > 0) return `${(targetKbps / 1000).toFixed(1)} Mbps`
   return '0.0 Mbps'
+})
+
+const topProfile = computed(() => {
+  const effective = streamInfo.value?.effective_profile
+  if (effective) {
+    const mode = String(effective.mode || '').toLowerCase()
+    const level = Number(effective.level)
+    const fps = Number(effective.targetFps)
+    const kbps = Number(effective.targetBitrateKbps)
+    if (Number.isFinite(level) && Number.isFinite(fps) && Number.isFinite(kbps)) {
+      const modeLabel = mode === 'manual' ? 'MANUAL' : (mode === 'auto' ? 'AUTO' : 'RUN')
+      return `${modeLabel} · L${level} · ${Math.round(fps)}fps · ${Math.round(kbps)}kbps`
+    }
+  }
+  const mode = String(streamInfo.value?.device?.streamMode || '').toLowerCase()
+  const level = Number(streamInfo.value?.device?.profileLevel)
+  const fps = Number(streamInfo.value?.device?.targetFps)
+  const kbps = Number(streamInfo.value?.device?.targetBitrateKbps)
+  if (Number.isFinite(level) && Number.isFinite(fps) && Number.isFinite(kbps)) {
+    const modeLabel = mode === 'manual' ? 'MANUAL' : (mode === 'auto' ? 'AUTO' : 'RUN')
+    return `${modeLabel} · L${level} · ${Math.round(fps)}fps · ${Math.round(kbps)}kbps`
+  }
+  return 'N/A'
 })
 
 const debugTelemetry = computed(() => {
@@ -378,7 +423,7 @@ function onLiveAction(action) {
     return
   }
   if (action === 'camera-config') {
-    router.push('/settings')
+    openCameraSettings()
     return
   }
   if (action === 'fullscreen') {
@@ -386,6 +431,67 @@ function onLiveAction(action) {
     return
   }
   showToast(`${action} action queued`)
+}
+
+async function openCameraSettings() {
+  if (!selectedCamera.value) return
+  cameraSettingsOpen.value = true
+  cameraSettingsLoading.value = true
+  cameraSettingsError.value = ''
+  try {
+    const data = await cameraApi.getSettings(selectedCamera.value.id)
+    const s = data?.settings || {}
+    cameraSettingsForm.value = {
+      stream_mode: String(s.stream_mode || 'auto').toLowerCase() === 'manual' ? 'manual' : 'auto',
+      manual_level: Number(s.manual_level ?? 2) || 2,
+      auto_min_level: Number(s.auto_min_level ?? 0) || 0,
+      auto_max_level: Number(s.auto_max_level ?? 4) || 4,
+      auto_policy: String(s.auto_policy || 'balanced').toLowerCase(),
+      auto_cooldown_sec: Number(s.auto_cooldown_sec ?? 10) || 10,
+      auto_up_hold_sec: Number(s.auto_up_hold_sec ?? 25) || 25,
+      auto_down_hold_sec: Number(s.auto_down_hold_sec ?? 3) || 3,
+    }
+  } catch (err) {
+    cameraSettingsError.value = err?.message || 'Failed to load camera settings'
+  } finally {
+    cameraSettingsLoading.value = false
+  }
+}
+
+function closeCameraSettings() {
+  cameraSettingsOpen.value = false
+  cameraSettingsError.value = ''
+}
+
+async function saveCameraSettings() {
+  if (!selectedCamera.value) return
+  cameraSettingsSaving.value = true
+  cameraSettingsError.value = ''
+  try {
+    const form = { ...cameraSettingsForm.value }
+    form.manual_level = Math.max(0, Math.min(4, Number(form.manual_level) || 2))
+    form.auto_min_level = Math.max(0, Math.min(4, Number(form.auto_min_level) || 0))
+    form.auto_max_level = Math.max(0, Math.min(4, Number(form.auto_max_level) || 4))
+    if (form.auto_min_level > form.auto_max_level) {
+      const t = form.auto_min_level
+      form.auto_min_level = form.auto_max_level
+      form.auto_max_level = t
+    }
+    form.auto_cooldown_sec = Math.max(3, Math.min(120, Number(form.auto_cooldown_sec) || 10))
+    form.auto_up_hold_sec = Math.max(5, Math.min(180, Number(form.auto_up_hold_sec) || 25))
+    form.auto_down_hold_sec = Math.max(1, Math.min(60, Number(form.auto_down_hold_sec) || 3))
+    if (!['stable', 'balanced', 'quality'].includes(form.auto_policy)) {
+      form.auto_policy = 'balanced'
+    }
+    if (form.stream_mode !== 'manual') form.stream_mode = 'auto'
+    await cameraApi.updateSettings(selectedCamera.value.id, { settings: form })
+    showToast('Camera stream strategy saved')
+    closeCameraSettings()
+  } catch (err) {
+    cameraSettingsError.value = err?.message || 'Failed to save settings'
+  } finally {
+    cameraSettingsSaving.value = false
+  }
 }
 
 function onPtz(dir) {
@@ -501,6 +607,7 @@ onBeforeUnmount(async () => {
           <span class="ms-chip"><span id="monitorTopStatusDot" class="dot" :class="statusDotClass"></span><span id="monitorTopStatusText">{{ statusText }}</span></span>
           <span class="ms-chip"><span class="mi" style="font-size:16px">animation</span>FPS <strong id="monitorTopFps">{{ topFps }}</strong></span>
           <span class="ms-chip"><span class="mi" style="font-size:16px">network_check</span><strong id="monitorTopBitrate">{{ topBitrate }}</strong></span>
+          <span class="ms-chip"><span class="mi" style="font-size:16px">tune</span><strong>{{ topProfile }}</strong></span>
           <span class="ms-chip"><span class="mi" style="font-size:16px">timer</span><strong id="monitorTopLatency">{{ latencyMs }} ms</strong></span>
           <span class="ms-chip"><span class="mi" style="font-size:16px">update</span><span id="monitorTopUpdatedAt">{{ updatedLabel }}</span></span>
         </div>
@@ -508,7 +615,7 @@ onBeforeUnmount(async () => {
           <button class="mt-btn" data-monitor-top-action="refresh" @click="refreshStreamInfo"><span class="mi">refresh</span> Refresh</button>
           <button class="mt-btn" data-monitor-top-action="reconnect" @click="reconnectPlayer"><span class="mi">sync</span> Reconnect</button>
           <button class="mt-btn" data-monitor-top-action="debug" @click="toggleDebugOverlay"><span class="mi">monitoring</span> {{ debugEnabled ? 'Hide Debug' : 'Debug' }}</button>
-          <button class="mt-btn" data-monitor-top-action="settings" @click="router.push('/settings')"><span class="mi">settings</span> Device Settings</button>
+          <button class="mt-btn" data-monitor-top-action="settings" @click="openCameraSettings"><span class="mi">settings</span> Camera Settings</button>
         </div>
       </div>
     </div>
@@ -593,6 +700,84 @@ onBeforeUnmount(async () => {
           </div>
         </div>
       </aside>
+    </div>
+
+    <div v-if="cameraSettingsOpen" class="settings-modal-backdrop" @click.self="closeCameraSettings">
+      <div class="settings-modal">
+        <div class="settings-modal-head">
+          <h4>Camera Settings · {{ selectedCamera?.name || '' }}</h4>
+          <button class="close-btn" @click="closeCameraSettings"><span class="mi">close</span></button>
+        </div>
+        <div v-if="cameraSettingsLoading" class="settings-modal-loading">Loading...</div>
+        <div v-else class="settings-modal-body">
+          <label class="sf-row">
+            <span>Stream Mode</span>
+            <select v-model="cameraSettingsForm.stream_mode" class="sf-input">
+              <option value="auto">Auto Adapt</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+          <label v-if="cameraSettingsForm.stream_mode === 'manual'" class="sf-row">
+            <span>Manual Level</span>
+            <select v-model.number="cameraSettingsForm.manual_level" class="sf-input">
+              <option :value="0">L0</option>
+              <option :value="1">L1</option>
+              <option :value="2">L2</option>
+              <option :value="3">L3</option>
+              <option :value="4">L4</option>
+            </select>
+          </label>
+          <template v-else>
+            <label class="sf-row">
+              <span>Auto Min Level</span>
+              <select v-model.number="cameraSettingsForm.auto_min_level" class="sf-input">
+                <option :value="0">L0</option>
+                <option :value="1">L1</option>
+                <option :value="2">L2</option>
+                <option :value="3">L3</option>
+                <option :value="4">L4</option>
+              </select>
+            </label>
+            <label class="sf-row">
+              <span>Auto Max Level</span>
+              <select v-model.number="cameraSettingsForm.auto_max_level" class="sf-input">
+                <option :value="0">L0</option>
+                <option :value="1">L1</option>
+                <option :value="2">L2</option>
+                <option :value="3">L3</option>
+                <option :value="4">L4</option>
+              </select>
+            </label>
+            <label class="sf-row">
+              <span>Policy</span>
+              <select v-model="cameraSettingsForm.auto_policy" class="sf-input">
+                <option value="stable">Stable</option>
+                <option value="balanced">Balanced</option>
+                <option value="quality">Quality</option>
+              </select>
+            </label>
+            <label class="sf-row">
+              <span>Cooldown (sec)</span>
+              <input v-model.number="cameraSettingsForm.auto_cooldown_sec" class="sf-input" type="number" min="3" max="120" />
+            </label>
+            <label class="sf-row">
+              <span>Up Hold (sec)</span>
+              <input v-model.number="cameraSettingsForm.auto_up_hold_sec" class="sf-input" type="number" min="5" max="180" />
+            </label>
+            <label class="sf-row">
+              <span>Down Hold (sec)</span>
+              <input v-model.number="cameraSettingsForm.auto_down_hold_sec" class="sf-input" type="number" min="1" max="60" />
+            </label>
+          </template>
+          <div v-if="cameraSettingsError" class="settings-modal-error">{{ cameraSettingsError }}</div>
+          <div class="settings-modal-actions">
+            <button class="mt-btn" @click="closeCameraSettings">Cancel</button>
+            <button class="mt-btn primary" :disabled="cameraSettingsSaving" @click="saveCameraSettings">
+              {{ cameraSettingsSaving ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-if="toastMessage" class="monitor-toast">{{ toastMessage }}</div>
@@ -746,6 +931,19 @@ onBeforeUnmount(async () => {
 .monitor-toast { position: fixed; right: 20px; bottom: 22px; z-index: 500; background: rgba(30, 27, 38, 0.96); border: 1px solid var(--olv); border-radius: var(--r2); padding: 8px 12px; font: 500 12px/16px 'Roboto', sans-serif; color: var(--on-sf); box-shadow: var(--e2); }
 .error-msg { margin-top: 8px; color: var(--red); font: 500 12px/16px 'Roboto', sans-serif; }
 .blink { animation: blink 1.3s infinite; }
+.settings-modal-backdrop { position: fixed; inset: 0; z-index: 700; background: rgba(8,10,18,.6); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.settings-modal { width: min(560px, 100%); background: #1b1f31; border: 1px solid rgba(180,190,255,.3); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.45); }
+.settings-modal-head { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid rgba(180,190,255,.2); }
+.settings-modal-head h4 { margin: 0; font: 600 14px/20px 'Roboto', sans-serif; color: #e2e7ff; }
+.settings-modal-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.settings-modal-loading { padding: 24px 14px; color: #b8c1f7; }
+.sf-row { display: grid; grid-template-columns: 160px 1fr; align-items: center; gap: 10px; color: #cfd3f8; font: 500 12px/16px 'Roboto', sans-serif; }
+.sf-input { height: 34px; border-radius: 8px; border: 1px solid rgba(180,190,255,.3); background: rgba(16,20,34,.9); color: #f3f5ff; padding: 0 10px; }
+.settings-modal-actions { margin-top: 4px; display: flex; justify-content: flex-end; gap: 8px; }
+.settings-modal-error { color: #ff9ca3; font: 500 12px/16px 'Roboto', sans-serif; }
+.close-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid rgba(180,190,255,.32); background: transparent; color: #d9ddff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.close-btn:hover { background: rgba(255,255,255,.08); }
+.mt-btn.primary { background: rgba(200,191,255,.2); border-color: rgba(200,191,255,.5); color: #efe9ff; }
 
 @keyframes scan {
   0% { transform: translateY(0); }

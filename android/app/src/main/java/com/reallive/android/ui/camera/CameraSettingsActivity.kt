@@ -52,7 +52,6 @@ class CameraSettingsActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.camera_settings_back).setOnClickListener { finish() }
         applyLocalizedTexts()
-        findViewById<TextView>(R.id.camera_settings_name).text = cameraName
 
         findViewById<View>(R.id.camera_settings_row_name).setOnClickListener { editName() }
         findViewById<View>(R.id.camera_settings_row_location).setOnClickListener { editLocation() }
@@ -66,6 +65,8 @@ class CameraSettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.camera_settings_row_watermark).setOnClickListener {
             toggleSetting { copy(watermark_enabled = !watermark_enabled) }
         }
+        findViewById<View>(R.id.camera_settings_row_stream_mode).setOnClickListener { pickStreamMode() }
+        findViewById<View>(R.id.camera_settings_row_stream_profile).setOnClickListener { pickStreamProfile() }
         findViewById<View>(R.id.camera_settings_row_wifi).setOnClickListener { showWifiDialog() }
         findViewById<View>(R.id.camera_settings_row_firmware).setOnClickListener { triggerFirmwareUpdate() }
         findViewById<View>(R.id.camera_settings_firmware_action).setOnClickListener { triggerFirmwareUpdate() }
@@ -112,7 +113,6 @@ class CameraSettingsActivity : AppCompatActivity() {
 
     private fun render(data: CameraSettingsResponse) {
         cameraName = data.name.ifBlank { cameraName }
-        findViewById<TextView>(R.id.camera_settings_name).text = cameraName
         findViewById<TextView>(R.id.camera_settings_name_value).text = tr("Camera Name", "摄像头名称")
         findViewById<TextView>(R.id.camera_settings_name_subtitle).text = cameraName
         findViewById<TextView>(R.id.camera_settings_motion_title).text = tr("Motion Detection", "移动检测")
@@ -138,6 +138,10 @@ class CameraSettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.camera_settings_watermark_title).text = tr("Watermark", "水印")
         findViewById<TextView>(R.id.camera_settings_watermark_value).text =
             if (data.settings.watermark_enabled) tr("Timestamp enabled", "时间戳已启用") else tr("Disabled", "已关闭")
+        findViewById<TextView>(R.id.camera_settings_stream_mode_title).text = tr("Stream Mode", "码流模式")
+        findViewById<TextView>(R.id.camera_settings_stream_mode_value).text = streamModeLabel(data.settings.stream_mode)
+        findViewById<TextView>(R.id.camera_settings_stream_profile_title).text = tr("Streaming Profile", "码流档位")
+        findViewById<TextView>(R.id.camera_settings_stream_profile_value).text = streamProfileSummary(data.settings, data.device, data.effectiveProfile)
         findViewById<TextView>(R.id.camera_settings_firmware_title).text = tr("Firmware", "固件")
         findViewById<TextView>(R.id.camera_settings_firmware_value).text =
             "${data.settings.firmware_version} · ${if (data.settings.firmware_update_available) tr("Update available", "可更新") else tr("Latest", "最新")}"
@@ -146,11 +150,6 @@ class CameraSettingsActivity : AppCompatActivity() {
             alpha = if (data.settings.firmware_update_available) 1f else 0.5f
         }
 
-        findViewById<TextView>(R.id.camera_settings_status_text).text =
-            when (data.status.lowercase()) {
-                "online", "streaming" -> tr("Online", "在线")
-                else -> tr("Offline", "离线")
-            }
         findViewById<TextView>(R.id.camera_settings_wifi_title).text = "Wi-Fi"
 
         bindSwitch(R.id.camera_settings_motion_switch, R.id.camera_settings_motion_knob, data.settings.motion_enabled)
@@ -308,6 +307,84 @@ class CameraSettingsActivity : AppCompatActivity() {
             .setSingleChoiceItems(labels, idx) { dialog, which ->
                 dialog.dismiss()
                 saveSettings(current.settings.copy(image_flip_mode = values[which]))
+            }
+            .setNegativeButton(tr("Cancel", "取消"), null)
+            .show()
+    }
+
+    private fun pickStreamMode() {
+        val current = model ?: return
+        val values = arrayOf("auto", "manual")
+        val labels = arrayOf(tr("Auto Adapt", "自动决策"), tr("Manual Level", "手动选档"))
+        val idx = values.indexOf(current.settings.stream_mode.lowercase()).let { if (it < 0) 0 else it }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(tr("Stream Mode", "码流模式"))
+            .setSingleChoiceItems(labels, idx) { dialog, which ->
+                dialog.dismiss()
+                saveSettings(current.settings.copy(stream_mode = values[which]))
+            }
+            .setNegativeButton(tr("Cancel", "取消"), null)
+            .show()
+    }
+
+    private fun pickStreamProfile() {
+        val current = model ?: return
+        val levels = arrayOf(0, 1, 2, 3, 4)
+        val levelLabels = levels.map { "L$it" }.toTypedArray()
+        if (current.settings.stream_mode.lowercase() == "manual") {
+            val idx = levels.indexOf(current.settings.manual_level).let { if (it < 0) 2 else it }
+            MaterialAlertDialogBuilder(this)
+                .setTitle(tr("Manual Level", "手动档位"))
+                .setSingleChoiceItems(levelLabels, idx) { dialog, which ->
+                    dialog.dismiss()
+                    saveSettings(current.settings.copy(manual_level = levels[which]))
+                }
+                .setNegativeButton(tr("Cancel", "取消"), null)
+                .show()
+            return
+        }
+
+        val policies = arrayOf("stable", "balanced", "quality")
+        val policyLabels = arrayOf(
+            tr("Stable", "稳定优先"),
+            tr("Balanced", "均衡"),
+            tr("Quality", "画质优先"),
+        )
+        val pIdx = policies.indexOf(current.settings.auto_policy.lowercase()).let { if (it < 0) 1 else it }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(tr("Auto Policy", "自动策略"))
+            .setSingleChoiceItems(policyLabels, pIdx) { dialog, which ->
+                dialog.dismiss()
+                pickAutoLevelRange(current.settings.copy(auto_policy = policies[which]))
+            }
+            .setNegativeButton(tr("Cancel", "取消"), null)
+            .show()
+    }
+
+    private fun pickAutoLevelRange(base: CameraSettingsDetailDto) {
+        val levels = arrayOf(0, 1, 2, 3, 4)
+        val labels = levels.map { "L$it" }.toTypedArray()
+        val minIdx = levels.indexOf(base.auto_min_level).let { if (it < 0) 0 else it }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(tr("Auto Min Level", "自动最低档"))
+            .setSingleChoiceItems(labels, minIdx) { dialogMin, minWhich ->
+                dialogMin.dismiss()
+                val pickedMin = levels[minWhich]
+                val maxIdx = levels.indexOf(base.auto_max_level).let { if (it < 0) 4 else it }
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(tr("Auto Max Level", "自动最高档"))
+                    .setSingleChoiceItems(labels, maxIdx) { dialogMax, maxWhich ->
+                        dialogMax.dismiss()
+                        val pickedMax = levels[maxWhich]
+                        val next = if (pickedMin <= pickedMax) {
+                            base.copy(auto_min_level = pickedMin, auto_max_level = pickedMax)
+                        } else {
+                            base.copy(auto_min_level = pickedMax, auto_max_level = pickedMin)
+                        }
+                        saveSettings(next)
+                    }
+                    .setNegativeButton(tr("Cancel", "取消"), null)
+                    .show()
             }
             .setNegativeButton(tr("Cancel", "取消"), null)
             .show()
@@ -549,6 +626,42 @@ class CameraSettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun streamModeLabel(raw: String): String {
+        return when (raw.lowercase()) {
+            "manual" -> tr("Manual", "手动")
+            else -> tr("Auto", "自动")
+        }
+    }
+
+    private fun streamProfileSummary(
+        s: CameraSettingsDetailDto,
+        device: com.reallive.android.network.DeviceStateDto? = null,
+        effective: com.reallive.android.network.EffectiveProfileDto? = null,
+    ): String {
+        val effLevel = effective?.level
+        val effFps = effective?.targetFps
+        val effKbps = effective?.targetBitrateKbps
+        if (effLevel != null && effFps != null && effKbps != null) {
+            return "L$effLevel · ${effFps.toInt()}fps · ${effKbps}kbps"
+        }
+        val runtimeLevel = device?.profileLevel
+        val runtimeFps = device?.targetFps
+        val runtimeKbps = device?.targetBitrateKbps
+        if (runtimeLevel != null && runtimeFps != null && runtimeKbps != null) {
+            return "L$runtimeLevel · ${runtimeFps.toInt()}fps · ${runtimeKbps}kbps"
+        }
+        val mode = s.stream_mode.lowercase()
+        if (mode == "manual") {
+            return "${tr("Level", "档位")} L${s.manual_level}"
+        }
+        val policy = when (s.auto_policy.lowercase()) {
+            "stable" -> tr("Stable", "稳定优先")
+            "quality" -> tr("Quality", "画质优先")
+            else -> tr("Balanced", "均衡")
+        }
+        return "L${s.auto_min_level}-L${s.auto_max_level} · $policy"
+    }
+
     private fun handleAuth(ex: Exception): Boolean {
         if (ex is HttpException && ex.code() == 401) {
             appConfig.clearAuth()
@@ -588,12 +701,15 @@ class CameraSettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.camera_settings_flip_subtitle).text = imageFlipLabel("Normal")
         findViewById<TextView>(R.id.camera_settings_watermark_title).text = tr("Watermark", "水印")
         findViewById<TextView>(R.id.camera_settings_watermark_value).text = tr("Timestamp enabled", "时间戳已启用")
+        findViewById<TextView>(R.id.camera_settings_stream_mode_title).text = tr("Stream Mode", "码流模式")
+        findViewById<TextView>(R.id.camera_settings_stream_mode_value).text = tr("Auto", "自动")
+        findViewById<TextView>(R.id.camera_settings_stream_profile_title).text = tr("Streaming Profile", "码流档位")
+        findViewById<TextView>(R.id.camera_settings_stream_profile_value).text = "L0-L4 · ${tr("Balanced", "均衡")}"
         findViewById<TextView>(R.id.camera_settings_firmware_title).text = tr("Firmware", "固件")
         findViewById<TextView>(R.id.camera_settings_firmware_value).text = "v2.3.8 · ${tr("Update available", "可更新")}"
         findViewById<TextView>(R.id.camera_settings_firmware_action).text = tr("Update", "更新")
         findViewById<TextView>(R.id.camera_settings_wifi_title).text = "Wi-Fi"
         findViewById<TextView>(R.id.camera_settings_wifi_value).text = "${tr("Wi-Fi", "Wi-Fi")} · ${tr("Good", "良好")}"
-        findViewById<TextView>(R.id.camera_settings_status_text).text = tr("Online", "在线")
     }
 
     private fun zh(): Boolean = isChineseLanguage(appConfig.getAppLanguage())

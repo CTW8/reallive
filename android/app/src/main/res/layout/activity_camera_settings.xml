@@ -51,66 +51,11 @@
             android:paddingEnd="20dp"
             android:paddingBottom="16dp">
 
-            <FrameLayout
-                android:layout_width="match_parent"
-                android:layout_height="120dp"
-                android:background="@drawable/bg_camera_preview"
-                android:clipToOutline="true">
-
-                <ImageView
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_rl_door_front_24"
-                    android:tint="#26FFFFFF" />
-
-                <TextView
-                    android:id="@+id/camera_settings_name"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="bottom|start"
-                    android:layout_marginStart="10dp"
-                    android:layout_marginBottom="8dp"
-                    android:text="Front Door"
-                    android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
-                    android:textColor="@color/white" />
-
-                <LinearLayout
-                    android:id="@+id/camera_settings_status_row"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="bottom|end"
-                    android:layout_marginEnd="10dp"
-                    android:layout_marginBottom="8dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <View
-                        android:layout_width="6dp"
-                        android:layout_height="6dp"
-                        android:background="@drawable/bg_status_dot_green" />
-
-                    <TextView
-                        android:id="@+id/camera_settings_status_text"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="4dp"
-                        android:text="Online"
-                        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-                        android:textColor="#7DD881" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:background="@drawable/bg_hist_video_grid" />
-            </FrameLayout>
-
             <TextView
                 android:id="@+id/camera_settings_section_general"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="8dp"
                 android:text="General"
                 android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
                 android:textColor="?attr/colorOnSurface" />
@@ -636,6 +581,94 @@
                             android:layout_marginEnd="5dp"
                             android:background="@drawable/bg_switch_knob_on" />
                     </FrameLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/camera_settings_row_stream_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="54dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/ic_rl_tune_24"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/camera_settings_stream_mode_title"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Stream Mode"
+                            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/camera_settings_stream_mode_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Auto"
+                            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_rl_chevron_right_24"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/camera_settings_row_stream_profile"
+                    android:layout_width="match_parent"
+                    android:layout_height="54dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/ic_rl_speed_24"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/camera_settings_stream_profile_title"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Streaming Profile"
+                            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/camera_settings_stream_profile_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="L0-L4 · Balanced"
+                            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_rl_chevron_right_24"
+                        android:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
             </LinearLayout>
 

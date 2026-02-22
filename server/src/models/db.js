@@ -109,11 +109,36 @@ db.exec(`
     night_vision_mode TEXT DEFAULT 'Auto',
     image_flip_mode TEXT DEFAULT 'Normal',
     watermark_enabled INTEGER DEFAULT 1,
+    stream_mode TEXT DEFAULT 'auto',
+    manual_level INTEGER DEFAULT 2,
+    auto_min_level INTEGER DEFAULT 0,
+    auto_max_level INTEGER DEFAULT 4,
+    auto_policy TEXT DEFAULT 'balanced',
+    auto_cooldown_sec INTEGER DEFAULT 10,
+    auto_up_hold_sec INTEGER DEFAULT 25,
+    auto_down_hold_sec INTEGER DEFAULT 3,
     firmware_version TEXT DEFAULT 'v2.3.8',
     firmware_update_available INTEGER DEFAULT 1,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE
   );
 `);
+
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  const exists = cols.some((it) => String(it.name) === column);
+  if (!exists) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+ensureColumn('camera_settings', 'stream_mode', "TEXT DEFAULT 'auto'");
+ensureColumn('camera_settings', 'manual_level', 'INTEGER DEFAULT 2');
+ensureColumn('camera_settings', 'auto_min_level', 'INTEGER DEFAULT 0');
+ensureColumn('camera_settings', 'auto_max_level', 'INTEGER DEFAULT 4');
+ensureColumn('camera_settings', 'auto_policy', "TEXT DEFAULT 'balanced'");
+ensureColumn('camera_settings', 'auto_cooldown_sec', 'INTEGER DEFAULT 10');
+ensureColumn('camera_settings', 'auto_up_hold_sec', 'INTEGER DEFAULT 25');
+ensureColumn('camera_settings', 'auto_down_hold_sec', 'INTEGER DEFAULT 3');
 
 module.exports = db;

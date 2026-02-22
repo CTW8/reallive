@@ -66,6 +66,51 @@ function buildStreamUrls(req, streamKey) {
   };
 }
 
+function levelTarget(level) {
+  const safe = Math.max(0, Math.min(4, Number(level) || 0));
+  switch (safe) {
+    case 0: return { fps: 12, kbps: 350 };
+    case 1: return { fps: 15, kbps: 600 };
+    case 2: return { fps: 20, kbps: 1200 };
+    case 3: return { fps: 25, kbps: 1800 };
+    default: return { fps: 30, kbps: 2500 };
+  }
+}
+
+function buildEffectiveProfile(settings, device) {
+  if (device) {
+    const mode = String(device.streamMode || device.stream_mode || settings?.stream_mode || 'auto').toLowerCase();
+    const level = Math.max(0, Math.min(4, Number(device.profileLevel ?? device.profile_level ?? settings?.manual_level ?? 2) || 2));
+    const fps = Math.max(1, Number(device.targetFps ?? device.target_fps ?? levelTarget(level).fps) || levelTarget(level).fps);
+    const kbps = Math.max(100, Number(device.targetBitrateKbps ?? device.target_bitrate_kbps ?? levelTarget(level).kbps) || levelTarget(level).kbps);
+    return {
+      source: 'device',
+      mode,
+      level,
+      targetFps: fps,
+      targetBitrateKbps: kbps,
+      autoPolicy: String(device.autoPolicy || device.auto_policy || settings?.auto_policy || 'balanced'),
+      autoMinLevel: Math.max(0, Math.min(4, Number(device.autoMinLevel ?? device.auto_min_level ?? settings?.auto_min_level ?? 0) || 0)),
+      autoMaxLevel: Math.max(0, Math.min(4, Number(device.autoMaxLevel ?? device.auto_max_level ?? settings?.auto_max_level ?? 4) || 4)),
+    };
+  }
+  const mode = String(settings?.stream_mode || 'auto').toLowerCase();
+  const level = mode === 'manual'
+    ? Math.max(0, Math.min(4, Number(settings?.manual_level ?? 2) || 2))
+    : Math.max(0, Math.min(4, Number(settings?.auto_min_level ?? 0) || 0));
+  const target = levelTarget(level);
+  return {
+    source: 'settings',
+    mode,
+    level,
+    targetFps: target.fps,
+    targetBitrateKbps: target.kbps,
+    autoPolicy: String(settings?.auto_policy || 'balanced'),
+    autoMinLevel: Math.max(0, Math.min(4, Number(settings?.auto_min_level ?? 0) || 0)),
+    autoMaxLevel: Math.max(0, Math.min(4, Number(settings?.auto_max_level ?? 4) || 4)),
+  };
+}
+
 // All camera routes require authentication
 router.use(authMiddleware);
 
@@ -149,6 +194,7 @@ router.get('/:id/stream', (req, res) => {
   const seiInfo = getSeiInfo(camera.stream_key);
   const cameraSettings = CameraSettings.getByCameraId(camera.id);
   const device = getDeviceState(camera.stream_key);
+  const effectiveProfile = buildEffectiveProfile(cameraSettings, device);
   const liveDemand = liveDemandService.getCameraDemandState(camera.id);
   const runtimeStatus = device
     ? (device.activeLive ? 'streaming' : 'online')
@@ -183,6 +229,7 @@ router.get('/:id/stream', (req, res) => {
     sei: seiInfo,
     camera_settings: cameraSettings,
     device: device || null,
+    effective_profile: effectiveProfile,
     liveDemand,
   });
 });
@@ -197,7 +244,17 @@ router.get('/:id/settings', (req, res) => {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const settings = CameraSettings.getByCameraId(camera.id);
+  let deviceApply = null;
+  if (mqttControlService.isEnabled()) {
+    const published = mqttControlService.publishCameraSettingsCommand(camera.stream_key, settings);
+    deviceApply = {
+      mqttEnabled: true,
+      mqttReady: mqttControlService.isReady(),
+      published,
+    };
+  }
   const device = getDeviceState(camera.stream_key);
+  const effectiveProfile = buildEffectiveProfile(settings, device);
   const runtimeStatus = device
     ? (device.activeLive ? 'streaming' : 'online')
     : null;
@@ -209,6 +266,9 @@ router.get('/:id/settings', (req, res) => {
     location: camera.location || settings.location || '',
     status,
     settings,
+    device: device || null,
+    effective_profile: effectiveProfile,
+    deviceApply,
   });
 });
 
@@ -230,8 +290,44 @@ router.put('/:id/settings', (req, res) => {
     return res.status(400).json({ error: 'Camera name cannot be empty' });
   }
 
+  const settingsPatch = req.body?.settings || req.body || {};
+  if (settingsPatch.stream_mode != null) {
+    const mode = String(settingsPatch.stream_mode).trim().toLowerCase();
+    if (mode !== 'manual' && mode !== 'auto') {
+      return res.status(400).json({ error: 'stream_mode must be manual or auto' });
+    }
+  }
+  if (settingsPatch.auto_policy != null) {
+    const policy = String(settingsPatch.auto_policy).trim().toLowerCase();
+    if (!['stable', 'balanced', 'quality'].includes(policy)) {
+      return res.status(400).json({ error: 'auto_policy must be stable, balanced, or quality' });
+    }
+  }
+  const numberKeys = [
+    'manual_level',
+    'auto_min_level',
+    'auto_max_level',
+    'auto_cooldown_sec',
+    'auto_up_hold_sec',
+    'auto_down_hold_sec',
+  ];
+  for (const key of numberKeys) {
+    if (settingsPatch[key] == null) continue;
+    const n = Number(settingsPatch[key]);
+    if (!Number.isFinite(n)) {
+      return res.status(400).json({ error: `${key} must be a number` });
+    }
+  }
+  if (settingsPatch.auto_min_level != null || settingsPatch.auto_max_level != null) {
+    const min = Number(settingsPatch.auto_min_level ?? 0);
+    const max = Number(settingsPatch.auto_max_level ?? 4);
+    if (Number.isFinite(min) && Number.isFinite(max) && min > max) {
+      return res.status(400).json({ error: 'auto_min_level must be <= auto_max_level' });
+    }
+  }
+
   const updatedCamera = Camera.update(camera.id, req.user.id, cameraPatch);
-  const settings = CameraSettings.upsert(camera.id, req.body?.settings || req.body || {});
+  const settings = CameraSettings.upsert(camera.id, settingsPatch);
   let deviceApply = null;
   if (mqttControlService.isEnabled()) {
     const published = mqttControlService.publishCameraSettingsCommand(updatedCamera.stream_key, settings);
@@ -242,6 +338,7 @@ router.put('/:id/settings', (req, res) => {
     };
   }
   const device = getDeviceState(updatedCamera.stream_key);
+  const effectiveProfile = buildEffectiveProfile(settings, device);
   const runtimeStatus = device
     ? (device.activeLive ? 'streaming' : 'online')
     : null;
@@ -253,6 +350,8 @@ router.put('/:id/settings', (req, res) => {
     location: updatedCamera.location || settings.location || '',
     status,
     settings,
+    device: device || null,
+    effective_profile: effectiveProfile,
     deviceApply,
   });
 });

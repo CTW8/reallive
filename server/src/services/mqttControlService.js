@@ -66,6 +66,12 @@ function toBool(value, fallback = false) {
   return fallback;
 }
 
+function toText(value, fallback = '') {
+  if (value == null) return fallback;
+  const text = String(value).trim();
+  return text || fallback;
+}
+
 function normalizeRuntimeState(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const storageTotalGb = Math.max(0, Number(raw.storageTotalGb ?? raw.storage_total_gb ?? 0) || 0);
@@ -80,6 +86,24 @@ function normalizeRuntimeState(raw) {
     desiredLive: toBool(raw.desiredLive ?? raw.desired_live, false),
     activeLive: toBool(raw.activeLive ?? raw.active_live, false),
     recordMinFreePercent: Math.max(1, Math.min(95, Number(raw.recordMinFreePercent ?? raw.record_min_free_percent ?? 15) || 15)),
+    motionEnabled: toBool(raw.motionEnabled ?? raw.motion_enabled, true),
+    personEnabled: toBool(raw.personEnabled ?? raw.person_enabled, true),
+    soundEnabled: toBool(raw.soundEnabled ?? raw.sound_enabled, false),
+    motionSensitivity: toText(raw.motionSensitivity ?? raw.motion_sensitivity, 'High'),
+    soundSensitivity: toText(raw.soundSensitivity ?? raw.sound_sensitivity, 'Loud'),
+    detectionZones: toText(raw.detectionZones ?? raw.detection_zones, '2 zones configured'),
+    watermarkEnabled: toBool(raw.watermarkEnabled ?? raw.watermark_enabled, true),
+    imageFlipMode: Number(raw.imageFlipMode ?? raw.image_flip_mode ?? 0) || 0,
+    nightVisionEnabled: toBool(raw.nightVisionEnabled ?? raw.night_vision_enabled, false),
+    nightVisionMode: Number(raw.nightVisionMode ?? raw.night_vision_mode ?? 0) || 0,
+    streamMode: toText(raw.streamMode ?? raw.stream_mode, 'auto'),
+    profileLevel: Math.max(0, Math.min(4, Number(raw.profileLevel ?? raw.profile_level ?? 2) || 2)),
+    targetFps: Math.max(1, Number(raw.targetFps ?? raw.target_fps ?? 15) || 15),
+    targetBitrateKbps: Math.max(100, Number(raw.targetBitrateKbps ?? raw.target_bitrate_kbps ?? 600) || 600),
+    autoPolicy: toText(raw.autoPolicy ?? raw.auto_policy, 'balanced'),
+    autoMinLevel: Math.max(0, Math.min(4, Number(raw.autoMinLevel ?? raw.auto_min_level ?? 0) || 0)),
+    autoMaxLevel: Math.max(0, Math.min(4, Number(raw.autoMaxLevel ?? raw.auto_max_level ?? 4) || 4)),
+    adaptationReason: toText(raw.adaptationReason ?? raw.adaptation_reason, ''),
     storagePct: Math.round(storagePct * 10) / 10,
     storageUsedGb: Math.round(storageUsedGb * 100) / 100,
     storageTotalGb: Math.round(storageTotalGb * 100) / 100,
@@ -279,6 +303,26 @@ function publishCameraSettingsCommand(streamKey, settings = {}) {
   const token = sanitizeToken(streamKey);
   if (!token) return false;
   seq += 1;
+  const motionEnabled = toBool(settings.motion_enabled, true);
+  const personEnabled = toBool(settings.person_enabled, true);
+  const soundEnabled = toBool(settings.sound_enabled, false);
+  const nightVisionEnabled = toBool(settings.night_vision_enabled, true);
+  const watermarkEnabled = toBool(settings.watermark_enabled, true);
+  const streamMode = toText(settings.stream_mode, 'auto').toLowerCase() === 'manual' ? 'manual' : 'auto';
+  const manualLevel = Math.max(0, Math.min(4, Number(settings.manual_level ?? 2) || 2));
+  const autoMinLevel = Math.max(0, Math.min(4, Number(settings.auto_min_level ?? 0) || 0));
+  const autoMaxLevel = Math.max(0, Math.min(4, Number(settings.auto_max_level ?? 4) || 4));
+  const autoPolicyRaw = toText(settings.auto_policy, 'balanced').toLowerCase();
+  const autoPolicy = ['stable', 'balanced', 'quality'].includes(autoPolicyRaw) ? autoPolicyRaw : 'balanced';
+  const autoCooldownSec = Math.max(3, Math.min(120, Number(settings.auto_cooldown_sec ?? 10) || 10));
+  const autoUpHoldSec = Math.max(5, Math.min(180, Number(settings.auto_up_hold_sec ?? 25) || 25));
+  const autoDownHoldSec = Math.max(1, Math.min(60, Number(settings.auto_down_hold_sec ?? 3) || 3));
+  const motionSensitivity = settings.motion_sensitivity != null ? String(settings.motion_sensitivity) : undefined;
+  const soundSensitivity = settings.sound_sensitivity != null ? String(settings.sound_sensitivity) : undefined;
+  const nightVisionMode = settings.night_vision_mode != null ? String(settings.night_vision_mode) : undefined;
+  const imageFlipMode = settings.image_flip_mode != null ? String(settings.image_flip_mode) : undefined;
+  const detectionZones = settings.detection_zones != null ? String(settings.detection_zones) : undefined;
+
   const payload = {
     v: 1,
     ts: nowMs(),
@@ -286,17 +330,43 @@ function publishCameraSettingsCommand(streamKey, settings = {}) {
     stream_key: streamKey,
     type: 'camera_settings',
     seq,
+    motion_enabled: motionEnabled,
+    person_enabled: personEnabled,
+    sound_enabled: soundEnabled,
+    stream_mode: streamMode,
+    manual_level: manualLevel,
+    auto_min_level: autoMinLevel,
+    auto_max_level: autoMaxLevel,
+    auto_policy: autoPolicy,
+    auto_cooldown_sec: autoCooldownSec,
+    auto_up_hold_sec: autoUpHoldSec,
+    auto_down_hold_sec: autoDownHoldSec,
+    night_vision_enabled: nightVisionEnabled,
+    watermark_enabled: watermarkEnabled,
+    motion_sensitivity: motionSensitivity,
+    sound_sensitivity: soundSensitivity,
+    night_vision_mode: nightVisionMode,
+    image_flip_mode: imageFlipMode,
+    detection_zones: detectionZones,
     settings: {
-      motion_enabled: toBool(settings.motion_enabled, true),
-      person_enabled: toBool(settings.person_enabled, true),
-      sound_enabled: toBool(settings.sound_enabled, false),
-      night_vision_enabled: toBool(settings.night_vision_enabled, true),
-      watermark_enabled: toBool(settings.watermark_enabled, true),
-      motion_sensitivity: settings.motion_sensitivity != null ? String(settings.motion_sensitivity) : undefined,
-      sound_sensitivity: settings.sound_sensitivity != null ? String(settings.sound_sensitivity) : undefined,
-      night_vision_mode: settings.night_vision_mode != null ? String(settings.night_vision_mode) : undefined,
-      image_flip_mode: settings.image_flip_mode != null ? String(settings.image_flip_mode) : undefined,
-      detection_zones: settings.detection_zones != null ? String(settings.detection_zones) : undefined,
+      motion_enabled: motionEnabled,
+      person_enabled: personEnabled,
+      sound_enabled: soundEnabled,
+      stream_mode: streamMode,
+      manual_level: manualLevel,
+      auto_min_level: autoMinLevel,
+      auto_max_level: autoMaxLevel,
+      auto_policy: autoPolicy,
+      auto_cooldown_sec: autoCooldownSec,
+      auto_up_hold_sec: autoUpHoldSec,
+      auto_down_hold_sec: autoDownHoldSec,
+      night_vision_enabled: nightVisionEnabled,
+      watermark_enabled: watermarkEnabled,
+      motion_sensitivity: motionSensitivity,
+      sound_sensitivity: soundSensitivity,
+      night_vision_mode: nightVisionMode,
+      image_flip_mode: imageFlipMode,
+      detection_zones: detectionZones,
     },
   };
   const topic = commandTopic(streamKey);

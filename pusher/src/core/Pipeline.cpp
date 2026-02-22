@@ -109,6 +109,22 @@ std::string formatNumber(double value, int precision = 1) {
     return oss.str();
 }
 
+struct StreamLevelConfig {
+    int fps;
+    int bitrateKbps;
+};
+
+StreamLevelConfig levelConfig(int level) {
+    const int safe = std::max(0, std::min(4, level));
+    switch (safe) {
+    case 0: return {12, 350};
+    case 1: return {15, 600};
+    case 2: return {20, 1200};
+    case 3: return {25, 1800};
+    default: return {30, 2500};
+    }
+}
+
 void flipNv12Horizontal(std::vector<uint8_t>& data, int width, int height) {
     if (width <= 1 || height <= 1) return;
     const size_t ySize = static_cast<size_t>(width) * static_cast<size_t>(height);
@@ -1573,6 +1589,7 @@ void Pipeline::videoLoop() {
     auto lastSeiTime = Clock::now() - std::chrono::milliseconds(2000);
     auto lastSeiLogTime = Clock::now() - std::chrono::seconds(10);
     auto lastSlowLogTime = Clock::now() - std::chrono::seconds(10);
+    auto lastAdaptLogTime = Clock::now() - std::chrono::seconds(10);
     uint64_t droppedFrames = 0;
     uint64_t totalProcessTime = 0;
     uint64_t maxProcessTime = 0;
@@ -1677,6 +1694,8 @@ void Pipeline::videoLoop() {
     });
 
     std::thread sendThread([&]() {
+        int64_t sendWindowStartMs = wallClockMs();
+        uint64_t sendWindowBytes = 0;
         while (true) {
             EncodedPacket packet;
             {
@@ -1691,6 +1710,18 @@ void Pipeline::videoLoop() {
             if (packet.empty()) continue;
 
             if (!livePushDesired_.load()) {
+                sendDropped++;
+                continue;
+            }
+
+            const int targetKbps = std::max(100, runtimeProfileTargetBitrateKbps_.load());
+            const uint64_t targetBytesPerSec = static_cast<uint64_t>(targetKbps) * 1000ull / 8ull;
+            const int64_t nowMs = wallClockMs();
+            if (nowMs - sendWindowStartMs >= 1000) {
+                sendWindowStartMs = nowMs;
+                sendWindowBytes = 0;
+            }
+            if (!packet.isKeyframe && sendWindowBytes + packet.data.size() > targetBytesPerSec) {
                 sendDropped++;
                 continue;
             }
@@ -1725,6 +1756,7 @@ void Pipeline::videoLoop() {
             if (!sentOk) continue;
             framesSent_++;
             bytesSent_ += packet.data.size();
+            sendWindowBytes += packet.data.size();
         }
     });
 
@@ -1740,7 +1772,13 @@ void Pipeline::videoLoop() {
     uint64_t lastFramesSentForFps = 0;
     uint64_t lastBytesSentForBitrate = 0;
     double currentOutBitrateBps = 0.0;
+    double ewmaOutBitrateBps = 0.0;
+    std::deque<double> bitrate10sWindow;
+    constexpr size_t kBitrateWindowSize = 10;
+    constexpr double kBitrateEwmaAlpha = 0.25;
     constexpr int64_t kOverlayFreshMs = 160;
+    int64_t lastEncodedFrameMs = 0;
+    uint64_t lastSendDropForAdapt = 0;
 
     while (running_) {
         auto frameStart = Clock::now();
@@ -1769,6 +1807,14 @@ void Pipeline::videoLoop() {
 
         auto captureTime = Clock::now();
         const int64_t frameTsMs = normalizeFrameTimestampMs(frame.pts);
+
+        const int targetFps = std::max(1, runtimeProfileTargetFps_.load());
+        const int64_t minIntervalMs = std::max<int64_t>(1, 1000 / targetFps);
+        if (lastEncodedFrameMs > 0 && frameTsMs - lastEncodedFrameMs < minIntervalMs) {
+            continue;
+        }
+        lastEncodedFrameMs = frameTsMs;
+
         auto detectOverlayStart = Clock::now();
 
         const bool detectEnabled = runtimeMotionEnabled_.load() || runtimePersonEnabled_.load();
@@ -1943,6 +1989,16 @@ void Pipeline::videoLoop() {
             const uint64_t bytesNow = bytesSent_.load();
             const uint64_t bytesDelta = bytesNow >= lastBytesSentForBitrate ? (bytesNow - lastBytesSentForBitrate) : 0;
             currentOutBitrateBps = static_cast<double>(bytesDelta) * 8.0 * 1000.0 / elapsed.count();
+            if (ewmaOutBitrateBps <= 0.0) {
+                ewmaOutBitrateBps = currentOutBitrateBps;
+            } else {
+                ewmaOutBitrateBps = kBitrateEwmaAlpha * currentOutBitrateBps +
+                                    (1.0 - kBitrateEwmaAlpha) * ewmaOutBitrateBps;
+            }
+            bitrate10sWindow.push_back(currentOutBitrateBps);
+            if (bitrate10sWindow.size() > kBitrateWindowSize) {
+                bitrate10sWindow.pop_front();
+            }
             lastBytesSentForBitrate = bytesNow;
             lastFpsTime = now;
         }
@@ -1976,7 +2032,130 @@ void Pipeline::videoLoop() {
                       << " | Encode: " << encodeTime.count() / 1000 << "ms"
                       << " | AvgProcess: " << avgProcessTime / 1000 << "ms"
                       << " | MaxProcess: " << maxProcessTime / 1000 << "ms"
-                      << " | P99: " << p99Time / 1000 << "ms" << std::endl;
+                      << " | P99: " << p99Time / 1000 << "ms"
+                      << " | Level: L" << runtimeProfileLevel_.load()
+                      << "@" << runtimeProfileTargetFps_.load() << "fps/" << runtimeProfileTargetBitrateKbps_.load() << "kbps"
+                      << std::endl;
+
+            const int64_t nowMs = wallClockMs();
+            const uint64_t currentSendDrop = sendDropped.load();
+            const uint64_t sendDropDelta = currentSendDrop >= lastSendDropForAdapt
+                ? (currentSendDrop - lastSendDropForAdapt)
+                : 0;
+            lastSendDropForAdapt = currentSendDrop;
+
+            std::string mode;
+            std::string policy;
+            int minLevel = 0;
+            int maxLevel = 4;
+            int cooldownSec = 10;
+            int upHoldSec = 25;
+            int downHoldSec = 3;
+            {
+                std::lock_guard<std::mutex> lock(runtimeStreamMutex_);
+                mode = runtimeStreamMode_;
+                policy = runtimeAutoPolicy_;
+                minLevel = runtimeAutoMinLevel_;
+                maxLevel = runtimeAutoMaxLevel_;
+                cooldownSec = runtimeAutoCooldownSec_;
+                upHoldSec = runtimeAutoUpHoldSec_;
+                downHoldSec = runtimeAutoDownHoldSec_;
+            }
+
+            if (mode == "auto") {
+                const int currentLevel = runtimeProfileLevel_.load();
+                const int64_t sinceSwitch = nowMs - runtimeLastSwitchMs_.load();
+                const double targetBps = static_cast<double>(runtimeProfileTargetBitrateKbps_.load()) * 1000.0;
+                double avg10sBps = 0.0;
+                if (!bitrate10sWindow.empty()) {
+                    double sum = 0.0;
+                    for (const double sample : bitrate10sWindow) sum += sample;
+                    avg10sBps = sum / static_cast<double>(bitrate10sWindow.size());
+                }
+                const double fastBps = currentOutBitrateBps;
+                const double stableBps = avg10sBps > 0.0 ? avg10sBps : ewmaOutBitrateBps;
+                const bool bad = (sendDropDelta > 0) ||
+                                 (targetBps > 0.0 &&
+                                  fastBps > 0.0 &&
+                                  stableBps > 0.0 &&
+                                  fastBps < targetBps * 0.65 &&
+                                  stableBps < targetBps * 0.80);
+                const bool good = (sendDropDelta == 0) &&
+                                  (targetBps > 0.0 &&
+                                   fastBps > targetBps * 1.20 &&
+                                   stableBps > targetBps * 1.05);
+
+                if (bad) {
+                    if (runtimeAdaptBadSinceMs_.load() <= 0) runtimeAdaptBadSinceMs_ = nowMs;
+                    runtimeAdaptGoodSinceMs_ = 0;
+                } else if (good) {
+                    if (runtimeAdaptGoodSinceMs_.load() <= 0) runtimeAdaptGoodSinceMs_ = nowMs;
+                    runtimeAdaptBadSinceMs_ = 0;
+                } else {
+                    runtimeAdaptBadSinceMs_ = 0;
+                    runtimeAdaptGoodSinceMs_ = 0;
+                }
+
+                const int policyDownBias = (policy == "quality") ? 1 : 0;
+                const int policyUpBias = (policy == "stable") ? 8 : (policy == "quality" ? -6 : 0);
+                const int downNeedSec = std::max(1, downHoldSec + policyDownBias);
+                const int upNeedSec = std::max(5, upHoldSec + policyUpBias);
+                const bool canSwitch = sinceSwitch >= static_cast<int64_t>(cooldownSec) * 1000;
+                const int64_t badMs = runtimeAdaptBadSinceMs_.load() > 0 ? (nowMs - runtimeAdaptBadSinceMs_.load()) : 0;
+                const int64_t goodMs = runtimeAdaptGoodSinceMs_.load() > 0 ? (nowMs - runtimeAdaptGoodSinceMs_.load()) : 0;
+
+                if (now - lastAdaptLogTime >= std::chrono::seconds(10)) {
+                    std::cout << "[Adapt Eval] mode=auto level=L" << currentLevel
+                              << " policy=" << policy
+                              << " range=L" << minLevel << "-L" << maxLevel
+                              << " canSwitch=" << (canSwitch ? "1" : "0")
+                              << " cooldownSec=" << cooldownSec
+                              << " sinceSwitchMs=" << sinceSwitch
+                              << " bad=" << (bad ? "1" : "0")
+                              << " badMs=" << badMs
+                              << " badNeedMs=" << (downNeedSec * 1000)
+                              << " good=" << (good ? "1" : "0")
+                              << " goodMs=" << goodMs
+                              << " goodNeedMs=" << (upNeedSec * 1000)
+                              << " sendDropDelta=" << sendDropDelta
+                              << " fastKbps=" << static_cast<int>(fastBps / 1000.0)
+                              << " ewmaKbps=" << static_cast<int>(ewmaOutBitrateBps / 1000.0)
+                              << " avg10sKbps=" << static_cast<int>(avg10sBps / 1000.0)
+                              << " targetKbps=" << runtimeProfileTargetBitrateKbps_.load()
+                              << std::endl;
+                    lastAdaptLogTime = now;
+                }
+
+                if (canSwitch && runtimeAdaptBadSinceMs_.load() > 0 &&
+                    nowMs - runtimeAdaptBadSinceMs_.load() >= static_cast<int64_t>(downNeedSec) * 1000 &&
+                    currentLevel > minLevel) {
+                    const int nextLevel = currentLevel - 1;
+                    const auto cfg = levelConfig(nextLevel);
+                    runtimeProfileLevel_ = nextLevel;
+                    runtimeProfileTargetFps_ = cfg.fps;
+                    runtimeProfileTargetBitrateKbps_ = cfg.bitrateKbps;
+                    runtimeLastSwitchMs_ = nowMs;
+                    runtimeAdaptBadSinceMs_ = 0;
+                    runtimeAdaptGoodSinceMs_ = 0;
+                    std::cout << "[Adapt] auto downshift -> L" << nextLevel
+                              << " reason=network_bad sendDropDelta=" << sendDropDelta
+                              << " outKbps=" << static_cast<int>(currentOutBitrateBps / 1000.0) << std::endl;
+                } else if (canSwitch && runtimeAdaptGoodSinceMs_.load() > 0 &&
+                           nowMs - runtimeAdaptGoodSinceMs_.load() >= static_cast<int64_t>(upNeedSec) * 1000 &&
+                           currentLevel < maxLevel) {
+                    const int nextLevel = currentLevel + 1;
+                    const auto cfg = levelConfig(nextLevel);
+                    runtimeProfileLevel_ = nextLevel;
+                    runtimeProfileTargetFps_ = cfg.fps;
+                    runtimeProfileTargetBitrateKbps_ = cfg.bitrateKbps;
+                    runtimeLastSwitchMs_ = nowMs;
+                    runtimeAdaptBadSinceMs_ = 0;
+                    runtimeAdaptGoodSinceMs_ = 0;
+                    std::cout << "[Adapt] auto upshift -> L" << nextLevel
+                              << " reason=network_good outKbps=" << static_cast<int>(currentOutBitrateBps / 1000.0)
+                              << std::endl;
+                }
+            }
             
             lastLogTime = now;
             totalProcessTime = 0;
@@ -2119,16 +2298,46 @@ bool Pipeline::getRecordCleanupPolicy(int& minFreePercent, int& targetFreePercen
     return true;
 }
 
-bool Pipeline::applyRuntimeSettings(bool motionEnabled, bool personEnabled, bool watermarkEnabled) {
+bool Pipeline::applyRuntimeSettings(
+    bool motionEnabled,
+    bool personEnabled,
+    bool soundEnabled,
+    const std::string& motionSensitivity,
+    const std::string& soundSensitivity,
+    const std::string& detectionZones,
+    bool watermarkEnabled
+) {
     runtimeMotionEnabled_ = motionEnabled;
     runtimePersonEnabled_ = personEnabled;
+    runtimeSoundEnabled_ = soundEnabled;
+    {
+        std::lock_guard<std::mutex> lock(runtimeSettingsMutex_);
+        runtimeMotionSensitivity_ = motionSensitivity.empty() ? "High" : motionSensitivity;
+        runtimeSoundSensitivity_ = soundSensitivity.empty() ? "Loud" : soundSensitivity;
+        runtimeDetectionZones_ = detectionZones.empty() ? "2 zones configured" : detectionZones;
+    }
     runtimeWatermarkEnabled_ = watermarkEnabled;
     return true;
 }
 
-void Pipeline::getRuntimeSettings(bool& motionEnabled, bool& personEnabled, bool& watermarkEnabled) const {
+void Pipeline::getRuntimeSettings(
+    bool& motionEnabled,
+    bool& personEnabled,
+    bool& soundEnabled,
+    std::string& motionSensitivity,
+    std::string& soundSensitivity,
+    std::string& detectionZones,
+    bool& watermarkEnabled
+) const {
     motionEnabled = runtimeMotionEnabled_.load();
     personEnabled = runtimePersonEnabled_.load();
+    soundEnabled = runtimeSoundEnabled_.load();
+    {
+        std::lock_guard<std::mutex> lock(runtimeSettingsMutex_);
+        motionSensitivity = runtimeMotionSensitivity_;
+        soundSensitivity = runtimeSoundSensitivity_;
+        detectionZones = runtimeDetectionZones_;
+    }
     watermarkEnabled = runtimeWatermarkEnabled_.load();
 }
 
@@ -2145,6 +2354,87 @@ void Pipeline::getRuntimeVisualSettings(int& imageFlipMode, bool& nightVisionEna
     imageFlipMode = runtimeImageFlipMode_.load();
     nightVisionEnabled = runtimeNightVisionEnabled_.load();
     nightVisionMode = runtimeNightVisionMode_.load();
+}
+
+bool Pipeline::applyRuntimeStreamPolicy(
+    const std::string& streamMode,
+    int manualLevel,
+    int autoMinLevel,
+    int autoMaxLevel,
+    const std::string& autoPolicy,
+    int autoCooldownSec,
+    int autoUpHoldSec,
+    int autoDownHoldSec
+) {
+    const std::string mode = (streamMode == "manual") ? "manual" : "auto";
+    const int manual = std::max(0, std::min(4, manualLevel));
+    const int minL = std::max(0, std::min(4, std::min(autoMinLevel, autoMaxLevel)));
+    const int maxL = std::max(0, std::min(4, std::max(autoMinLevel, autoMaxLevel)));
+    std::string policy = autoPolicy;
+    std::transform(policy.begin(), policy.end(), policy.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (policy != "stable" && policy != "balanced" && policy != "quality") {
+        policy = "balanced";
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(runtimeStreamMutex_);
+        runtimeStreamMode_ = mode;
+        runtimeManualLevel_ = manual;
+        runtimeAutoMinLevel_ = minL;
+        runtimeAutoMaxLevel_ = maxL;
+        runtimeAutoPolicy_ = policy;
+        runtimeAutoCooldownSec_ = std::max(3, std::min(120, autoCooldownSec));
+        runtimeAutoUpHoldSec_ = std::max(5, std::min(180, autoUpHoldSec));
+        runtimeAutoDownHoldSec_ = std::max(1, std::min(60, autoDownHoldSec));
+    }
+
+    if (mode == "manual") {
+        const auto cfg = levelConfig(manual);
+        runtimeProfileLevel_ = manual;
+        runtimeProfileTargetFps_ = cfg.fps;
+        runtimeProfileTargetBitrateKbps_ = cfg.bitrateKbps;
+        runtimeLastSwitchMs_ = wallClockMs();
+        runtimeAdaptBadSinceMs_ = 0;
+        runtimeAdaptGoodSinceMs_ = 0;
+    } else {
+        int current = runtimeProfileLevel_.load();
+        if (current < minL) current = minL;
+        if (current > maxL) current = maxL;
+        const auto cfg = levelConfig(current);
+        runtimeProfileLevel_ = current;
+        runtimeProfileTargetFps_ = cfg.fps;
+        runtimeProfileTargetBitrateKbps_ = cfg.bitrateKbps;
+    }
+    return true;
+}
+
+void Pipeline::getRuntimeStreamPolicy(
+    std::string& streamMode,
+    int& manualLevel,
+    int& autoMinLevel,
+    int& autoMaxLevel,
+    std::string& autoPolicy,
+    int& autoCooldownSec,
+    int& autoUpHoldSec,
+    int& autoDownHoldSec,
+    int& currentLevel,
+    int& targetFps,
+    int& targetBitrateKbps
+) const {
+    {
+        std::lock_guard<std::mutex> lock(runtimeStreamMutex_);
+        streamMode = runtimeStreamMode_;
+        manualLevel = runtimeManualLevel_;
+        autoMinLevel = runtimeAutoMinLevel_;
+        autoMaxLevel = runtimeAutoMaxLevel_;
+        autoPolicy = runtimeAutoPolicy_;
+        autoCooldownSec = runtimeAutoCooldownSec_;
+        autoUpHoldSec = runtimeAutoUpHoldSec_;
+        autoDownHoldSec = runtimeAutoDownHoldSec_;
+    }
+    currentLevel = runtimeProfileLevel_.load();
+    targetFps = runtimeProfileTargetFps_.load();
+    targetBitrateKbps = runtimeProfileTargetBitrateKbps_.load();
 }
 
 } // namespace reallive

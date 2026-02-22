@@ -539,11 +539,15 @@ class WatchActivity : AppCompatActivity() {
             ?: info.srs?.kbps?.send_30s?.takeIf { it > 0L }?.toDouble()
         val seiCfgFps = seiCfg?.fps?.takeIf { it > 0.0 }
         val seiCfgBitrateKbps = seiCfg?.bitrate?.takeIf { it > 0L }?.let { it / 1000.0 }
+        val effectiveFps = info.effectiveProfile?.targetFps?.takeIf { it > 0.0 }
+        val effectiveBitrateKbps = info.effectiveProfile?.targetBitrateKbps?.takeIf { it > 0L }?.toDouble()
 
         val (fpsValue, kbpsValue, source) = if (seiFps != null || seiBitrateKbps != null) {
             Triple(seiFps, seiBitrateKbps, "SEI")
         } else if (seiCfgFps != null || seiCfgBitrateKbps != null) {
             Triple(seiCfgFps, seiCfgBitrateKbps, "SEI_CFG")
+        } else if (effectiveFps != null || effectiveBitrateKbps != null) {
+            Triple(effectiveFps, effectiveBitrateKbps, "EFFECTIVE")
         } else if (srsFps != null || srsBitrateKbps != null) {
             Triple(srsFps, srsBitrateKbps, "SRS")
         } else {
@@ -568,6 +572,10 @@ class WatchActivity : AppCompatActivity() {
                     "seiHistKbps=${seiHistory?.streamOutBitrateKbps ?: -1.0} " +
                     "seiCfgFps=${seiCfg?.fps ?: -1.0} " +
                     "seiCfgBitrate=${seiCfg?.bitrate ?: -1L} " +
+                    "effectiveMode=${info.effectiveProfile?.mode ?: "null"} " +
+                    "effectiveLevel=${info.effectiveProfile?.level ?: -1} " +
+                    "effectiveFps=${info.effectiveProfile?.targetFps ?: -1.0} " +
+                    "effectiveKbps=${info.effectiveProfile?.targetBitrateKbps ?: -1L} " +
                     "srsFps=${info.srs?.fps ?: -1.0} " +
                     "srsRecvKbps=${info.srs?.kbps?.recv_30s ?: -1L} " +
                     "srsSendKbps=${info.srs?.kbps?.send_30s ?: -1L}",

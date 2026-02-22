@@ -233,15 +233,51 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
     int minFreePercent = 0;
     bool motionEnabled = true;
     bool personEnabled = true;
+    bool soundEnabled = false;
+    std::string motionSensitivity = "High";
+    std::string soundSensitivity = "Loud";
+    std::string detectionZones = "2 zones configured";
     bool watermarkEnabled = true;
     int imageFlipMode = 0;
     bool nightVisionEnabled = false;
     int nightVisionMode = 0;
+    std::string streamMode = "auto";
+    int manualLevel = 2;
+    int autoMinLevel = 0;
+    int autoMaxLevel = 4;
+    std::string autoPolicy = "balanced";
+    int autoCooldownSec = 10;
+    int autoUpHoldSec = 25;
+    int autoDownHoldSec = 3;
+    int currentLevel = 2;
+    int targetFps = 20;
+    int targetBitrateKbps = 1200;
     if (pipeline_) {
         int ignoredTarget = 0;
         pipeline_->getRecordCleanupPolicy(minFreePercent, ignoredTarget);
-        pipeline_->getRuntimeSettings(motionEnabled, personEnabled, watermarkEnabled);
+        pipeline_->getRuntimeSettings(
+            motionEnabled,
+            personEnabled,
+            soundEnabled,
+            motionSensitivity,
+            soundSensitivity,
+            detectionZones,
+            watermarkEnabled
+        );
         pipeline_->getRuntimeVisualSettings(imageFlipMode, nightVisionEnabled, nightVisionMode);
+        pipeline_->getRuntimeStreamPolicy(
+            streamMode,
+            manualLevel,
+            autoMinLevel,
+            autoMaxLevel,
+            autoPolicy,
+            autoCooldownSec,
+            autoUpHoldSec,
+            autoDownHoldSec,
+            currentLevel,
+            targetFps,
+            targetBitrateKbps
+        );
     }
     double storagePct = 0.0;
     double storageUsedGb = 0.0;
@@ -268,10 +304,25 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
         << "\"record_min_free_percent\":" << minFreePercent << ","
         << "\"motion_enabled\":" << (motionEnabled ? "true" : "false") << ","
         << "\"person_enabled\":" << (personEnabled ? "true" : "false") << ","
+        << "\"sound_enabled\":" << (soundEnabled ? "true" : "false") << ","
+        << "\"motion_sensitivity\":\"" << motionSensitivity << "\","
+        << "\"sound_sensitivity\":\"" << soundSensitivity << "\","
+        << "\"detection_zones\":\"" << detectionZones << "\","
         << "\"watermark_enabled\":" << (watermarkEnabled ? "true" : "false") << ","
         << "\"image_flip_mode\":" << imageFlipMode << ","
         << "\"night_vision_enabled\":" << (nightVisionEnabled ? "true" : "false") << ","
         << "\"night_vision_mode\":" << nightVisionMode << ","
+        << "\"stream_mode\":\"" << streamMode << "\","
+        << "\"manual_level\":" << manualLevel << ","
+        << "\"auto_min_level\":" << autoMinLevel << ","
+        << "\"auto_max_level\":" << autoMaxLevel << ","
+        << "\"auto_policy\":\"" << autoPolicy << "\","
+        << "\"auto_cooldown_sec\":" << autoCooldownSec << ","
+        << "\"auto_up_hold_sec\":" << autoUpHoldSec << ","
+        << "\"auto_down_hold_sec\":" << autoDownHoldSec << ","
+        << "\"profile_level\":" << currentLevel << ","
+        << "\"target_fps\":" << targetFps << ","
+        << "\"target_bitrate_kbps\":" << targetBitrateKbps << ","
         << "\"storage_pct\":" << formatNumber(storagePct) << ","
         << "\"storage_used_gb\":" << formatNumber(storageUsedGb, 2) << ","
         << "\"storage_total_gb\":" << formatNumber(storageTotalGb, 2);
@@ -398,6 +449,11 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         if (motionRaw.empty()) motionRaw = jsonValue(payload, "motion");
         std::string personRaw = jsonValue(payload, "person_enabled");
         if (personRaw.empty()) personRaw = jsonValue(payload, "person");
+        std::string soundRaw = jsonValue(payload, "sound_enabled");
+        if (soundRaw.empty()) soundRaw = jsonValue(payload, "sound");
+        std::string motionSensitivityRaw = jsonValue(payload, "motion_sensitivity");
+        std::string soundSensitivityRaw = jsonValue(payload, "sound_sensitivity");
+        std::string detectionZonesRaw = jsonValue(payload, "detection_zones");
         std::string watermarkRaw = jsonValue(payload, "watermark_enabled");
         if (watermarkRaw.empty()) watermarkRaw = jsonValue(payload, "watermark");
         std::string flipRaw = jsonValue(payload, "image_flip_mode");
@@ -406,6 +462,14 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         if (nightEnabledRaw.empty()) nightEnabledRaw = jsonValue(payload, "night_enabled");
         std::string nightModeRaw = jsonValue(payload, "night_vision_mode");
         if (nightModeRaw.empty()) nightModeRaw = jsonValue(payload, "night_mode");
+        std::string streamModeRaw = jsonValue(payload, "stream_mode");
+        std::string manualLevelRaw = jsonValue(payload, "manual_level");
+        std::string autoMinLevelRaw = jsonValue(payload, "auto_min_level");
+        std::string autoMaxLevelRaw = jsonValue(payload, "auto_max_level");
+        std::string autoPolicyRaw = jsonValue(payload, "auto_policy");
+        std::string autoCooldownSecRaw = jsonValue(payload, "auto_cooldown_sec");
+        std::string autoUpHoldSecRaw = jsonValue(payload, "auto_up_hold_sec");
+        std::string autoDownHoldSecRaw = jsonValue(payload, "auto_down_hold_sec");
 
         auto asBool = [](const std::string& raw, bool fallback) {
             if (raw.empty()) return fallback;
@@ -417,17 +481,57 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
 
         bool currentMotion = true;
         bool currentPerson = true;
+        bool currentSound = false;
+        std::string currentMotionSensitivity = "High";
+        std::string currentSoundSensitivity = "Loud";
+        std::string currentDetectionZones = "2 zones configured";
         bool currentWatermark = true;
-        pipeline_->getRuntimeSettings(currentMotion, currentPerson, currentWatermark);
+        pipeline_->getRuntimeSettings(
+            currentMotion,
+            currentPerson,
+            currentSound,
+            currentMotionSensitivity,
+            currentSoundSensitivity,
+            currentDetectionZones,
+            currentWatermark
+        );
         int currentFlipMode = 0;
         bool currentNightEnabled = false;
         int currentNightMode = 0;
         pipeline_->getRuntimeVisualSettings(currentFlipMode, currentNightEnabled, currentNightMode);
+        std::string currentStreamMode = "auto";
+        int currentManualLevel = 2;
+        int currentAutoMinLevel = 0;
+        int currentAutoMaxLevel = 4;
+        std::string currentAutoPolicy = "balanced";
+        int currentAutoCooldownSec = 10;
+        int currentAutoUpHoldSec = 25;
+        int currentAutoDownHoldSec = 3;
+        int currentLevel = 2;
+        int currentTargetFps = 20;
+        int currentTargetKbps = 1200;
+        pipeline_->getRuntimeStreamPolicy(
+            currentStreamMode,
+            currentManualLevel,
+            currentAutoMinLevel,
+            currentAutoMaxLevel,
+            currentAutoPolicy,
+            currentAutoCooldownSec,
+            currentAutoUpHoldSec,
+            currentAutoDownHoldSec,
+            currentLevel,
+            currentTargetFps,
+            currentTargetKbps
+        );
 
         const bool motionEnabled = asBool(motionRaw, currentMotion);
         const bool personEnabled = asBool(personRaw, currentPerson);
+        const bool soundEnabled = asBool(soundRaw, currentSound);
         const bool watermarkEnabled = asBool(watermarkRaw, currentWatermark);
         const bool nightEnabled = asBool(nightEnabledRaw, currentNightEnabled);
+        const std::string motionSensitivity = motionSensitivityRaw.empty() ? currentMotionSensitivity : trim(motionSensitivityRaw);
+        const std::string soundSensitivity = soundSensitivityRaw.empty() ? currentSoundSensitivity : trim(soundSensitivityRaw);
+        const std::string detectionZones = detectionZonesRaw.empty() ? currentDetectionZones : trim(detectionZonesRaw);
 
         auto parseFlipMode = [](const std::string& raw, int fallback) {
             if (raw.empty()) return fallback;
@@ -448,16 +552,51 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         };
         const int flipMode = parseFlipMode(flipRaw, currentFlipMode);
         const int nightMode = parseNightMode(nightModeRaw, currentNightMode);
+        const std::string streamMode = lower(trim(streamModeRaw.empty() ? currentStreamMode : streamModeRaw));
+        const int manualLevel = manualLevelRaw.empty() ? currentManualLevel : std::max(0, std::min(4, std::atoi(manualLevelRaw.c_str())));
+        const int autoMinLevel = autoMinLevelRaw.empty() ? currentAutoMinLevel : std::max(0, std::min(4, std::atoi(autoMinLevelRaw.c_str())));
+        const int autoMaxLevel = autoMaxLevelRaw.empty() ? currentAutoMaxLevel : std::max(0, std::min(4, std::atoi(autoMaxLevelRaw.c_str())));
+        std::string autoPolicy = lower(trim(autoPolicyRaw.empty() ? currentAutoPolicy : autoPolicyRaw));
+        if (autoPolicy != "stable" && autoPolicy != "balanced" && autoPolicy != "quality") autoPolicy = "balanced";
+        const int autoCooldownSec = autoCooldownSecRaw.empty() ? currentAutoCooldownSec : std::max(3, std::min(120, std::atoi(autoCooldownSecRaw.c_str())));
+        const int autoUpHoldSec = autoUpHoldSecRaw.empty() ? currentAutoUpHoldSec : std::max(5, std::min(180, std::atoi(autoUpHoldSecRaw.c_str())));
+        const int autoDownHoldSec = autoDownHoldSecRaw.empty() ? currentAutoDownHoldSec : std::max(1, std::min(60, std::atoi(autoDownHoldSecRaw.c_str())));
 
-        const bool ok = pipeline_->applyRuntimeSettings(motionEnabled, personEnabled, watermarkEnabled);
+        const bool ok = pipeline_->applyRuntimeSettings(
+            motionEnabled,
+            personEnabled,
+            soundEnabled,
+            motionSensitivity,
+            soundSensitivity,
+            detectionZones,
+            watermarkEnabled
+        );
         const bool visualOk = pipeline_->applyRuntimeVisualSettings(flipMode, nightEnabled, nightMode);
-        if (ok && visualOk) {
+        const bool streamOk = pipeline_->applyRuntimeStreamPolicy(
+            streamMode,
+            manualLevel,
+            autoMinLevel,
+            autoMaxLevel,
+            autoPolicy,
+            autoCooldownSec,
+            autoUpHoldSec,
+            autoDownHoldSec
+        );
+        if (ok && visualOk && streamOk) {
             std::cout << "[MQTT] Camera settings applied: motion=" << (motionEnabled ? "on" : "off")
                       << " person=" << (personEnabled ? "on" : "off")
+                      << " sound=" << (soundEnabled ? "on" : "off")
+                      << " motion_sens=" << motionSensitivity
+                      << " sound_sens=" << soundSensitivity
+                      << " zones=" << detectionZones
                       << " watermark=" << (watermarkEnabled ? "on" : "off")
                       << " flip=" << flipMode
                       << " night_enabled=" << (nightEnabled ? "on" : "off")
                       << " night_mode=" << nightMode
+                      << " stream_mode=" << streamMode
+                      << " manual_level=" << manualLevel
+                      << " auto_range=L" << autoMinLevel << "-L" << autoMaxLevel
+                      << " auto_policy=" << autoPolicy
                       << (seq >= 0 ? (", seq=" + std::to_string(seq)) : "") << std::endl;
             publishState("camera-settings-applied", seq);
             return;

@@ -12,6 +12,14 @@ const DEFAULTS = Object.freeze({
   night_vision_mode: 'Auto',
   image_flip_mode: 'Normal',
   watermark_enabled: 1,
+  stream_mode: 'auto',
+  manual_level: 2,
+  auto_min_level: 0,
+  auto_max_level: 4,
+  auto_policy: 'balanced',
+  auto_cooldown_sec: 10,
+  auto_up_hold_sec: 25,
+  auto_down_hold_sec: 3,
   firmware_version: 'v2.3.8',
   firmware_update_available: 1,
 });
@@ -30,6 +38,27 @@ function cleanText(value, fallback) {
   return s || fallback;
 }
 
+function clampInt(value, fallback, min, max) {
+  if (value == null) return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function cleanMode(value, fallback) {
+  if (value == null) return fallback;
+  const s = String(value).trim().toLowerCase();
+  if (s === 'manual' || s === 'auto') return s;
+  return fallback;
+}
+
+function cleanPolicy(value, fallback) {
+  if (value == null) return fallback;
+  const s = String(value).trim().toLowerCase();
+  if (s === 'stable' || s === 'balanced' || s === 'quality') return s;
+  return fallback;
+}
+
 function normalizeRow(row) {
   if (!row) return null;
   return {
@@ -45,6 +74,14 @@ function normalizeRow(row) {
     night_vision_mode: String(row.night_vision_mode || DEFAULTS.night_vision_mode),
     image_flip_mode: String(row.image_flip_mode || DEFAULTS.image_flip_mode),
     watermark_enabled: Number(row.watermark_enabled || 0) === 1,
+    stream_mode: cleanMode(row.stream_mode, DEFAULTS.stream_mode),
+    manual_level: clampInt(row.manual_level, DEFAULTS.manual_level, 0, 4),
+    auto_min_level: clampInt(row.auto_min_level, DEFAULTS.auto_min_level, 0, 4),
+    auto_max_level: clampInt(row.auto_max_level, DEFAULTS.auto_max_level, 0, 4),
+    auto_policy: cleanPolicy(row.auto_policy, DEFAULTS.auto_policy),
+    auto_cooldown_sec: clampInt(row.auto_cooldown_sec, DEFAULTS.auto_cooldown_sec, 3, 120),
+    auto_up_hold_sec: clampInt(row.auto_up_hold_sec, DEFAULTS.auto_up_hold_sec, 5, 180),
+    auto_down_hold_sec: clampInt(row.auto_down_hold_sec, DEFAULTS.auto_down_hold_sec, 1, 60),
     firmware_version: String(row.firmware_version || DEFAULTS.firmware_version),
     firmware_update_available: Number(row.firmware_update_available || 0) === 1,
     updated_at: row.updated_at || null,
@@ -59,8 +96,10 @@ const CameraSettings = {
         INSERT INTO camera_settings (
           camera_id, location, motion_enabled, motion_sensitivity, person_enabled, sound_enabled,
           sound_sensitivity, detection_zones, night_vision_enabled, night_vision_mode,
-          image_flip_mode, watermark_enabled, firmware_version, firmware_update_available
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          image_flip_mode, watermark_enabled, stream_mode, manual_level, auto_min_level,
+          auto_max_level, auto_policy, auto_cooldown_sec, auto_up_hold_sec, auto_down_hold_sec,
+          firmware_version, firmware_update_available
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         cameraId,
         DEFAULTS.location,
@@ -74,6 +113,14 @@ const CameraSettings = {
         DEFAULTS.night_vision_mode,
         DEFAULTS.image_flip_mode,
         DEFAULTS.watermark_enabled,
+        DEFAULTS.stream_mode,
+        DEFAULTS.manual_level,
+        DEFAULTS.auto_min_level,
+        DEFAULTS.auto_max_level,
+        DEFAULTS.auto_policy,
+        DEFAULTS.auto_cooldown_sec,
+        DEFAULTS.auto_up_hold_sec,
+        DEFAULTS.auto_down_hold_sec,
         DEFAULTS.firmware_version,
         DEFAULTS.firmware_update_available
       );
@@ -96,9 +143,22 @@ const CameraSettings = {
       night_vision_mode: cleanText(patch.night_vision_mode, current.night_vision_mode),
       image_flip_mode: cleanText(patch.image_flip_mode, current.image_flip_mode),
       watermark_enabled: toBoolInt(patch.watermark_enabled, current.watermark_enabled ? 1 : 0),
+      stream_mode: cleanMode(patch.stream_mode, current.stream_mode),
+      manual_level: clampInt(patch.manual_level, current.manual_level, 0, 4),
+      auto_min_level: clampInt(patch.auto_min_level, current.auto_min_level, 0, 4),
+      auto_max_level: clampInt(patch.auto_max_level, current.auto_max_level, 0, 4),
+      auto_policy: cleanPolicy(patch.auto_policy, current.auto_policy),
+      auto_cooldown_sec: clampInt(patch.auto_cooldown_sec, current.auto_cooldown_sec, 3, 120),
+      auto_up_hold_sec: clampInt(patch.auto_up_hold_sec, current.auto_up_hold_sec, 5, 180),
+      auto_down_hold_sec: clampInt(patch.auto_down_hold_sec, current.auto_down_hold_sec, 1, 60),
       firmware_version: cleanText(patch.firmware_version, current.firmware_version),
       firmware_update_available: toBoolInt(patch.firmware_update_available, current.firmware_update_available ? 1 : 0),
     };
+    if (next.auto_min_level > next.auto_max_level) {
+      const mid = next.auto_min_level;
+      next.auto_min_level = next.auto_max_level;
+      next.auto_max_level = mid;
+    }
     db.prepare(`
       UPDATE camera_settings SET
         location = ?,
@@ -112,6 +172,14 @@ const CameraSettings = {
         night_vision_mode = ?,
         image_flip_mode = ?,
         watermark_enabled = ?,
+        stream_mode = ?,
+        manual_level = ?,
+        auto_min_level = ?,
+        auto_max_level = ?,
+        auto_policy = ?,
+        auto_cooldown_sec = ?,
+        auto_up_hold_sec = ?,
+        auto_down_hold_sec = ?,
         firmware_version = ?,
         firmware_update_available = ?,
         updated_at = CURRENT_TIMESTAMP
@@ -128,6 +196,14 @@ const CameraSettings = {
       next.night_vision_mode,
       next.image_flip_mode,
       next.watermark_enabled,
+      next.stream_mode,
+      next.manual_level,
+      next.auto_min_level,
+      next.auto_max_level,
+      next.auto_policy,
+      next.auto_cooldown_sec,
+      next.auto_up_hold_sec,
+      next.auto_down_hold_sec,
       next.firmware_version,
       next.firmware_update_available,
       cameraId
