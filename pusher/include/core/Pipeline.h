@@ -54,6 +54,7 @@ public:
     bool applyRuntimeVisualSettings(int imageFlipMode, bool nightVisionEnabled, int nightVisionMode);
     void getRuntimeVisualSettings(int& imageFlipMode, bool& nightVisionEnabled, int& nightVisionMode) const;
     bool applyRuntimeStreamPolicy(
+        const std::string& streamProfile,
         const std::string& streamMode,
         int manualLevel,
         int autoMinLevel,
@@ -64,6 +65,7 @@ public:
         int autoDownHoldSec
     );
     void getRuntimeStreamPolicy(
+        std::string& streamProfile,
         std::string& streamMode,
         int& manualLevel,
         int& autoMinLevel,
@@ -111,6 +113,8 @@ private:
     std::atomic<bool> runtimeNightVisionEnabled_{false};
     std::atomic<int> runtimeNightVisionMode_{0}; // 0 auto, 1 on, 2 off
     std::atomic<int> runtimeProfileLevel_{2};
+    std::atomic<int> runtimeProfileTargetWidth_{1280};
+    std::atomic<int> runtimeProfileTargetHeight_{720};
     std::atomic<int> runtimeProfileTargetFps_{20};
     std::atomic<int> runtimeProfileTargetBitrateKbps_{1200};
     std::atomic<int64_t> runtimeLastSwitchMs_{0};
@@ -121,6 +125,7 @@ private:
 
     PusherConfig config_;
     std::string runtimeStreamMode_{"auto"};
+    std::string runtimeStreamProfile_{"auto"};
     std::string runtimeAutoPolicy_{"balanced"};
     int runtimeManualLevel_ = 2;
     int runtimeAutoMinLevel_ = 0;

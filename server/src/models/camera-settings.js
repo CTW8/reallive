@@ -12,6 +12,7 @@ const DEFAULTS = Object.freeze({
   night_vision_mode: 'Auto',
   image_flip_mode: 'Normal',
   watermark_enabled: 1,
+  stream_profile: 'auto',
   stream_mode: 'auto',
   manual_level: 2,
   auto_min_level: 0,
@@ -59,6 +60,37 @@ function cleanPolicy(value, fallback) {
   return fallback;
 }
 
+function cleanStreamProfile(value, fallback) {
+  if (value == null) return fallback;
+  const s = String(value).trim().toLowerCase();
+  if (['auto', '360p', '540p', '720p', '1080p'].includes(s)) return s;
+  return fallback;
+}
+
+function profileToLegacy(profile, current) {
+  switch (profile) {
+    case '360p':
+      return { stream_mode: 'manual', manual_level: 0, auto_min_level: current.auto_min_level, auto_max_level: current.auto_max_level, auto_policy: current.auto_policy };
+    case '540p':
+      return { stream_mode: 'manual', manual_level: 1, auto_min_level: current.auto_min_level, auto_max_level: current.auto_max_level, auto_policy: current.auto_policy };
+    case '720p':
+      return { stream_mode: 'manual', manual_level: 2, auto_min_level: current.auto_min_level, auto_max_level: current.auto_max_level, auto_policy: current.auto_policy };
+    case '1080p':
+      return { stream_mode: 'manual', manual_level: 4, auto_min_level: current.auto_min_level, auto_max_level: current.auto_max_level, auto_policy: current.auto_policy };
+    default:
+      return { stream_mode: 'auto', manual_level: current.manual_level, auto_min_level: 0, auto_max_level: 4, auto_policy: 'balanced' };
+  }
+}
+
+function legacyToProfile(streamMode, manualLevel) {
+  if (String(streamMode || '').toLowerCase() !== 'manual') return 'auto';
+  const lvl = Number(manualLevel) || 0;
+  if (lvl <= 0) return '360p';
+  if (lvl === 1) return '540p';
+  if (lvl <= 3) return '720p';
+  return '1080p';
+}
+
 function normalizeRow(row) {
   if (!row) return null;
   return {
@@ -74,6 +106,7 @@ function normalizeRow(row) {
     night_vision_mode: String(row.night_vision_mode || DEFAULTS.night_vision_mode),
     image_flip_mode: String(row.image_flip_mode || DEFAULTS.image_flip_mode),
     watermark_enabled: Number(row.watermark_enabled || 0) === 1,
+    stream_profile: cleanStreamProfile(row.stream_profile, legacyToProfile(row.stream_mode, row.manual_level)),
     stream_mode: cleanMode(row.stream_mode, DEFAULTS.stream_mode),
     manual_level: clampInt(row.manual_level, DEFAULTS.manual_level, 0, 4),
     auto_min_level: clampInt(row.auto_min_level, DEFAULTS.auto_min_level, 0, 4),
@@ -96,10 +129,10 @@ const CameraSettings = {
         INSERT INTO camera_settings (
           camera_id, location, motion_enabled, motion_sensitivity, person_enabled, sound_enabled,
           sound_sensitivity, detection_zones, night_vision_enabled, night_vision_mode,
-          image_flip_mode, watermark_enabled, stream_mode, manual_level, auto_min_level,
+          image_flip_mode, watermark_enabled, stream_profile, stream_mode, manual_level, auto_min_level,
           auto_max_level, auto_policy, auto_cooldown_sec, auto_up_hold_sec, auto_down_hold_sec,
           firmware_version, firmware_update_available
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         cameraId,
         DEFAULTS.location,
@@ -113,6 +146,7 @@ const CameraSettings = {
         DEFAULTS.night_vision_mode,
         DEFAULTS.image_flip_mode,
         DEFAULTS.watermark_enabled,
+        DEFAULTS.stream_profile,
         DEFAULTS.stream_mode,
         DEFAULTS.manual_level,
         DEFAULTS.auto_min_level,
@@ -143,6 +177,7 @@ const CameraSettings = {
       night_vision_mode: cleanText(patch.night_vision_mode, current.night_vision_mode),
       image_flip_mode: cleanText(patch.image_flip_mode, current.image_flip_mode),
       watermark_enabled: toBoolInt(patch.watermark_enabled, current.watermark_enabled ? 1 : 0),
+      stream_profile: cleanStreamProfile(patch.stream_profile, current.stream_profile),
       stream_mode: cleanMode(patch.stream_mode, current.stream_mode),
       manual_level: clampInt(patch.manual_level, current.manual_level, 0, 4),
       auto_min_level: clampInt(patch.auto_min_level, current.auto_min_level, 0, 4),
@@ -154,6 +189,16 @@ const CameraSettings = {
       firmware_version: cleanText(patch.firmware_version, current.firmware_version),
       firmware_update_available: toBoolInt(patch.firmware_update_available, current.firmware_update_available ? 1 : 0),
     };
+    if (patch.stream_profile != null) {
+      const mapped = profileToLegacy(next.stream_profile, next);
+      next.stream_mode = mapped.stream_mode;
+      next.manual_level = mapped.manual_level;
+      next.auto_min_level = mapped.auto_min_level;
+      next.auto_max_level = mapped.auto_max_level;
+      next.auto_policy = mapped.auto_policy;
+    } else {
+      next.stream_profile = legacyToProfile(next.stream_mode, next.manual_level);
+    }
     if (next.auto_min_level > next.auto_max_level) {
       const mid = next.auto_min_level;
       next.auto_min_level = next.auto_max_level;
@@ -172,6 +217,7 @@ const CameraSettings = {
         night_vision_mode = ?,
         image_flip_mode = ?,
         watermark_enabled = ?,
+        stream_profile = ?,
         stream_mode = ?,
         manual_level = ?,
         auto_min_level = ?,
@@ -196,6 +242,7 @@ const CameraSettings = {
       next.night_vision_mode,
       next.image_flip_mode,
       next.watermark_enabled,
+      next.stream_profile,
       next.stream_mode,
       next.manual_level,
       next.auto_min_level,

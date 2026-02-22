@@ -242,6 +242,7 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
     bool nightVisionEnabled = false;
     int nightVisionMode = 0;
     std::string streamMode = "auto";
+    std::string streamProfile = "auto";
     int manualLevel = 2;
     int autoMinLevel = 0;
     int autoMaxLevel = 4;
@@ -266,6 +267,7 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
         );
         pipeline_->getRuntimeVisualSettings(imageFlipMode, nightVisionEnabled, nightVisionMode);
         pipeline_->getRuntimeStreamPolicy(
+            streamProfile,
             streamMode,
             manualLevel,
             autoMinLevel,
@@ -313,6 +315,7 @@ void MqttRuntimeClient::publishState(const char* reason, int64_t commandSeq) {
         << "\"night_vision_enabled\":" << (nightVisionEnabled ? "true" : "false") << ","
         << "\"night_vision_mode\":" << nightVisionMode << ","
         << "\"stream_mode\":\"" << streamMode << "\","
+        << "\"stream_profile\":\"" << streamProfile << "\","
         << "\"manual_level\":" << manualLevel << ","
         << "\"auto_min_level\":" << autoMinLevel << ","
         << "\"auto_max_level\":" << autoMaxLevel << ","
@@ -463,6 +466,7 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         std::string nightModeRaw = jsonValue(payload, "night_vision_mode");
         if (nightModeRaw.empty()) nightModeRaw = jsonValue(payload, "night_mode");
         std::string streamModeRaw = jsonValue(payload, "stream_mode");
+        std::string streamProfileRaw = jsonValue(payload, "stream_profile");
         std::string manualLevelRaw = jsonValue(payload, "manual_level");
         std::string autoMinLevelRaw = jsonValue(payload, "auto_min_level");
         std::string autoMaxLevelRaw = jsonValue(payload, "auto_max_level");
@@ -500,6 +504,7 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         int currentNightMode = 0;
         pipeline_->getRuntimeVisualSettings(currentFlipMode, currentNightEnabled, currentNightMode);
         std::string currentStreamMode = "auto";
+        std::string currentStreamProfile = "auto";
         int currentManualLevel = 2;
         int currentAutoMinLevel = 0;
         int currentAutoMaxLevel = 4;
@@ -511,6 +516,7 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         int currentTargetFps = 20;
         int currentTargetKbps = 1200;
         pipeline_->getRuntimeStreamPolicy(
+            currentStreamProfile,
             currentStreamMode,
             currentManualLevel,
             currentAutoMinLevel,
@@ -553,6 +559,10 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         const int flipMode = parseFlipMode(flipRaw, currentFlipMode);
         const int nightMode = parseNightMode(nightModeRaw, currentNightMode);
         const std::string streamMode = lower(trim(streamModeRaw.empty() ? currentStreamMode : streamModeRaw));
+        std::string streamProfile = lower(trim(streamProfileRaw.empty() ? currentStreamProfile : streamProfileRaw));
+        if (streamProfile != "auto" && streamProfile != "360p" && streamProfile != "540p" && streamProfile != "720p" && streamProfile != "1080p") {
+            streamProfile = "auto";
+        }
         const int manualLevel = manualLevelRaw.empty() ? currentManualLevel : std::max(0, std::min(4, std::atoi(manualLevelRaw.c_str())));
         const int autoMinLevel = autoMinLevelRaw.empty() ? currentAutoMinLevel : std::max(0, std::min(4, std::atoi(autoMinLevelRaw.c_str())));
         const int autoMaxLevel = autoMaxLevelRaw.empty() ? currentAutoMaxLevel : std::max(0, std::min(4, std::atoi(autoMaxLevelRaw.c_str())));
@@ -573,6 +583,7 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
         );
         const bool visualOk = pipeline_->applyRuntimeVisualSettings(flipMode, nightEnabled, nightMode);
         const bool streamOk = pipeline_->applyRuntimeStreamPolicy(
+            streamProfile,
             streamMode,
             manualLevel,
             autoMinLevel,
@@ -594,6 +605,7 @@ void MqttRuntimeClient::onMessage(const std::string& topic, const std::string& p
                       << " night_enabled=" << (nightEnabled ? "on" : "off")
                       << " night_mode=" << nightMode
                       << " stream_mode=" << streamMode
+                      << " stream_profile=" << streamProfile
                       << " manual_level=" << manualLevel
                       << " auto_range=L" << autoMinLevel << "-L" << autoMaxLevel
                       << " auto_policy=" << autoPolicy

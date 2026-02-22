@@ -291,7 +291,14 @@ class WatchActivity : AppCompatActivity() {
             } else {
                 "Auto"
             }
-        resolutionChip.text = resolution
+        val profileOption = info.effectiveProfile?.profileOption?.lowercase(Locale.US)
+        resolutionChip.text = if (profileOption != null && profileOption != "auto" &&
+            (profileOption == "360p" || profileOption == "540p" || profileOption == "720p" || profileOption == "1080p")
+        ) {
+            "$resolution · ${profileOption.uppercase(Locale.US)}"
+        } else {
+            resolution
+        }
         applyTelemetryChips(info)
         applyCameraRuntimeSettings(info)
     }
@@ -573,6 +580,7 @@ class WatchActivity : AppCompatActivity() {
                     "seiCfgFps=${seiCfg?.fps ?: -1.0} " +
                     "seiCfgBitrate=${seiCfg?.bitrate ?: -1L} " +
                     "effectiveMode=${info.effectiveProfile?.mode ?: "null"} " +
+                    "effectiveProfile=${info.effectiveProfile?.profileOption ?: "null"} " +
                     "effectiveLevel=${info.effectiveProfile?.level ?: -1} " +
                     "effectiveFps=${info.effectiveProfile?.targetFps ?: -1.0} " +
                     "effectiveKbps=${info.effectiveProfile?.targetBitrateKbps ?: -1L} " +

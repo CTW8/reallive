@@ -65,7 +65,6 @@ class CameraSettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.camera_settings_row_watermark).setOnClickListener {
             toggleSetting { copy(watermark_enabled = !watermark_enabled) }
         }
-        findViewById<View>(R.id.camera_settings_row_stream_mode).setOnClickListener { pickStreamMode() }
         findViewById<View>(R.id.camera_settings_row_stream_profile).setOnClickListener { pickStreamProfile() }
         findViewById<View>(R.id.camera_settings_row_wifi).setOnClickListener { showWifiDialog() }
         findViewById<View>(R.id.camera_settings_row_firmware).setOnClickListener { triggerFirmwareUpdate() }
@@ -138,8 +137,6 @@ class CameraSettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.camera_settings_watermark_title).text = tr("Watermark", "水印")
         findViewById<TextView>(R.id.camera_settings_watermark_value).text =
             if (data.settings.watermark_enabled) tr("Timestamp enabled", "时间戳已启用") else tr("Disabled", "已关闭")
-        findViewById<TextView>(R.id.camera_settings_stream_mode_title).text = tr("Stream Mode", "码流模式")
-        findViewById<TextView>(R.id.camera_settings_stream_mode_value).text = streamModeLabel(data.settings.stream_mode)
         findViewById<TextView>(R.id.camera_settings_stream_profile_title).text = tr("Streaming Profile", "码流档位")
         findViewById<TextView>(R.id.camera_settings_stream_profile_value).text = streamProfileSummary(data.settings, data.device, data.effectiveProfile)
         findViewById<TextView>(R.id.camera_settings_firmware_title).text = tr("Firmware", "固件")
@@ -312,79 +309,45 @@ class CameraSettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun pickStreamMode() {
-        val current = model ?: return
-        val values = arrayOf("auto", "manual")
-        val labels = arrayOf(tr("Auto Adapt", "自动决策"), tr("Manual Level", "手动选档"))
-        val idx = values.indexOf(current.settings.stream_mode.lowercase()).let { if (it < 0) 0 else it }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(tr("Stream Mode", "码流模式"))
-            .setSingleChoiceItems(labels, idx) { dialog, which ->
-                dialog.dismiss()
-                saveSettings(current.settings.copy(stream_mode = values[which]))
-            }
-            .setNegativeButton(tr("Cancel", "取消"), null)
-            .show()
-    }
-
     private fun pickStreamProfile() {
         val current = model ?: return
-        val levels = arrayOf(0, 1, 2, 3, 4)
-        val levelLabels = levels.map { "L$it" }.toTypedArray()
-        if (current.settings.stream_mode.lowercase() == "manual") {
-            val idx = levels.indexOf(current.settings.manual_level).let { if (it < 0) 2 else it }
-            MaterialAlertDialogBuilder(this)
-                .setTitle(tr("Manual Level", "手动档位"))
-                .setSingleChoiceItems(levelLabels, idx) { dialog, which ->
-                    dialog.dismiss()
-                    saveSettings(current.settings.copy(manual_level = levels[which]))
-                }
-                .setNegativeButton(tr("Cancel", "取消"), null)
-                .show()
-            return
-        }
-
-        val policies = arrayOf("stable", "balanced", "quality")
-        val policyLabels = arrayOf(
-            tr("Stable", "稳定优先"),
-            tr("Balanced", "均衡"),
-            tr("Quality", "画质优先"),
+        val profiles = arrayOf("auto", "360p", "540p", "720p", "1080p")
+        val labels = arrayOf(
+            tr("Auto", "自动"),
+            "360p",
+            "540p",
+            "720p",
+            "1080p",
         )
-        val pIdx = policies.indexOf(current.settings.auto_policy.lowercase()).let { if (it < 0) 1 else it }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(tr("Auto Policy", "自动策略"))
-            .setSingleChoiceItems(policyLabels, pIdx) { dialog, which ->
-                dialog.dismiss()
-                pickAutoLevelRange(current.settings.copy(auto_policy = policies[which]))
+        val currentProfile = current.settings.stream_profile.lowercase(Locale.US).ifBlank {
+            when {
+                current.settings.stream_mode.equals("manual", true) && current.settings.manual_level <= 0 -> "360p"
+                current.settings.stream_mode.equals("manual", true) && current.settings.manual_level == 1 -> "540p"
+                current.settings.stream_mode.equals("manual", true) && current.settings.manual_level >= 4 -> "1080p"
+                current.settings.stream_mode.equals("manual", true) -> "720p"
+                else -> "auto"
             }
-            .setNegativeButton(tr("Cancel", "取消"), null)
-            .show()
-    }
-
-    private fun pickAutoLevelRange(base: CameraSettingsDetailDto) {
-        val levels = arrayOf(0, 1, 2, 3, 4)
-        val labels = levels.map { "L$it" }.toTypedArray()
-        val minIdx = levels.indexOf(base.auto_min_level).let { if (it < 0) 0 else it }
+        }
+        val idx = profiles.indexOf(currentProfile).let { if (it < 0) 0 else it }
         MaterialAlertDialogBuilder(this)
-            .setTitle(tr("Auto Min Level", "自动最低档"))
-            .setSingleChoiceItems(labels, minIdx) { dialogMin, minWhich ->
-                dialogMin.dismiss()
-                val pickedMin = levels[minWhich]
-                val maxIdx = levels.indexOf(base.auto_max_level).let { if (it < 0) 4 else it }
-                MaterialAlertDialogBuilder(this)
-                    .setTitle(tr("Auto Max Level", "自动最高档"))
-                    .setSingleChoiceItems(labels, maxIdx) { dialogMax, maxWhich ->
-                        dialogMax.dismiss()
-                        val pickedMax = levels[maxWhich]
-                        val next = if (pickedMin <= pickedMax) {
-                            base.copy(auto_min_level = pickedMin, auto_max_level = pickedMax)
-                        } else {
-                            base.copy(auto_min_level = pickedMax, auto_max_level = pickedMin)
-                        }
-                        saveSettings(next)
-                    }
-                    .setNegativeButton(tr("Cancel", "取消"), null)
-                    .show()
+            .setTitle(tr("Streaming Profile", "码流档位"))
+            .setSingleChoiceItems(labels, idx) { dialog, which ->
+                dialog.dismiss()
+                val p = profiles[which]
+                val next = when (p) {
+                    "360p" -> current.settings.copy(stream_profile = p, stream_mode = "manual", manual_level = 0)
+                    "540p" -> current.settings.copy(stream_profile = p, stream_mode = "manual", manual_level = 1)
+                    "720p" -> current.settings.copy(stream_profile = p, stream_mode = "manual", manual_level = 2)
+                    "1080p" -> current.settings.copy(stream_profile = p, stream_mode = "manual", manual_level = 4)
+                    else -> current.settings.copy(
+                        stream_profile = "auto",
+                        stream_mode = "auto",
+                        auto_min_level = 0,
+                        auto_max_level = 4,
+                        auto_policy = "balanced",
+                    )
+                }
+                saveSettings(next)
             }
             .setNegativeButton(tr("Cancel", "取消"), null)
             .show()
@@ -626,13 +589,6 @@ class CameraSettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun streamModeLabel(raw: String): String {
-        return when (raw.lowercase()) {
-            "manual" -> tr("Manual", "手动")
-            else -> tr("Auto", "自动")
-        }
-    }
-
     private fun streamProfileSummary(
         s: CameraSettingsDetailDto,
         device: com.reallive.android.network.DeviceStateDto? = null,
@@ -642,7 +598,12 @@ class CameraSettingsActivity : AppCompatActivity() {
         val effFps = effective?.targetFps
         val effKbps = effective?.targetBitrateKbps
         if (effLevel != null && effFps != null && effKbps != null) {
-            return "L$effLevel · ${effFps.toInt()}fps · ${effKbps}kbps"
+            val option = effective.profileOption?.lowercase(Locale.US)
+            val prefix = when (option) {
+                "360p", "540p", "720p", "1080p" -> option
+                else -> if ((effective.mode ?: "").equals("auto", true)) tr("Auto", "自动") else "L$effLevel"
+            }
+            return "$prefix · ${effFps.toInt()}fps · ${effKbps}kbps"
         }
         val runtimeLevel = device?.profileLevel
         val runtimeFps = device?.targetFps
@@ -650,16 +611,16 @@ class CameraSettingsActivity : AppCompatActivity() {
         if (runtimeLevel != null && runtimeFps != null && runtimeKbps != null) {
             return "L$runtimeLevel · ${runtimeFps.toInt()}fps · ${runtimeKbps}kbps"
         }
-        val mode = s.stream_mode.lowercase()
-        if (mode == "manual") {
-            return "${tr("Level", "档位")} L${s.manual_level}"
+        val profile = s.stream_profile.lowercase(Locale.US).ifBlank {
+            when {
+                s.stream_mode.equals("manual", true) && s.manual_level <= 0 -> "360p"
+                s.stream_mode.equals("manual", true) && s.manual_level == 1 -> "540p"
+                s.stream_mode.equals("manual", true) && s.manual_level >= 4 -> "1080p"
+                s.stream_mode.equals("manual", true) -> "720p"
+                else -> "auto"
+            }
         }
-        val policy = when (s.auto_policy.lowercase()) {
-            "stable" -> tr("Stable", "稳定优先")
-            "quality" -> tr("Quality", "画质优先")
-            else -> tr("Balanced", "均衡")
-        }
-        return "L${s.auto_min_level}-L${s.auto_max_level} · $policy"
+        return if (profile == "auto") tr("Auto", "自动") else profile
     }
 
     private fun handleAuth(ex: Exception): Boolean {
@@ -701,10 +662,8 @@ class CameraSettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.camera_settings_flip_subtitle).text = imageFlipLabel("Normal")
         findViewById<TextView>(R.id.camera_settings_watermark_title).text = tr("Watermark", "水印")
         findViewById<TextView>(R.id.camera_settings_watermark_value).text = tr("Timestamp enabled", "时间戳已启用")
-        findViewById<TextView>(R.id.camera_settings_stream_mode_title).text = tr("Stream Mode", "码流模式")
-        findViewById<TextView>(R.id.camera_settings_stream_mode_value).text = tr("Auto", "自动")
         findViewById<TextView>(R.id.camera_settings_stream_profile_title).text = tr("Streaming Profile", "码流档位")
-        findViewById<TextView>(R.id.camera_settings_stream_profile_value).text = "L0-L4 · ${tr("Balanced", "均衡")}"
+        findViewById<TextView>(R.id.camera_settings_stream_profile_value).text = tr("Auto", "自动")
         findViewById<TextView>(R.id.camera_settings_firmware_title).text = tr("Firmware", "固件")
         findViewById<TextView>(R.id.camera_settings_firmware_value).text = "v2.3.8 · ${tr("Update available", "可更新")}"
         findViewById<TextView>(R.id.camera_settings_firmware_action).text = tr("Update", "更新")

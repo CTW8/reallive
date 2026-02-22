@@ -58,6 +58,7 @@ data class CameraSettingsDetailDto(
     val night_vision_mode: String = "Auto",
     val image_flip_mode: String = "Normal",
     val watermark_enabled: Boolean = true,
+    val stream_profile: String = "auto",
     val stream_mode: String = "auto",
     val manual_level: Int = 2,
     val auto_min_level: Int = 0,
@@ -114,6 +115,7 @@ data class DeviceStateDto(
     val commandSeq: Long? = null,
     val updatedAt: Long? = null,
     val streamMode: String? = null,
+    val streamProfile: String? = null,
     val profileLevel: Int? = null,
     val targetFps: Double? = null,
     val targetBitrateKbps: Long? = null,
@@ -125,6 +127,7 @@ data class DeviceStateDto(
 data class EffectiveProfileDto(
     val source: String? = null,
     val mode: String? = null,
+    val profileOption: String? = null,
     val level: Int? = null,
     val targetFps: Double? = null,
     val targetBitrateKbps: Long? = null,

@@ -110,6 +110,8 @@ std::string formatNumber(double value, int precision = 1) {
 }
 
 struct StreamLevelConfig {
+    int width;
+    int height;
     int fps;
     int bitrateKbps;
 };
@@ -117,12 +119,68 @@ struct StreamLevelConfig {
 StreamLevelConfig levelConfig(int level) {
     const int safe = std::max(0, std::min(4, level));
     switch (safe) {
-    case 0: return {12, 350};
-    case 1: return {15, 600};
-    case 2: return {20, 1200};
-    case 3: return {25, 1800};
-    default: return {30, 2500};
+    case 0: return {640, 360, 15, 700};
+    case 1: return {960, 540, 20, 1200};
+    case 2: return {1280, 720, 25, 2000};
+    case 3: return {1280, 720, 28, 2800};
+    default: return {1920, 1080, 30, 4000};
     }
+}
+
+Frame resizeNv12Nearest(const Frame& src, int dstW, int dstH) {
+    Frame out;
+    if (src.empty() || src.width <= 0 || src.height <= 0 || dstW <= 0 || dstH <= 0) {
+        return out;
+    }
+    if (src.width == dstW && src.height == dstH) {
+        return src;
+    }
+
+    const size_t srcYSize = static_cast<size_t>(src.width) * static_cast<size_t>(src.height);
+    const size_t srcUvSize = srcYSize / 2;
+    if (src.data.size() < srcYSize + srcUvSize) {
+        return out;
+    }
+
+    out.width = dstW;
+    out.height = dstH;
+    out.stride = dstW;
+    out.pts = src.pts;
+    out.pixelFormat = src.pixelFormat.empty() ? "NV12" : src.pixelFormat;
+    out.data.resize(static_cast<size_t>(dstW) * static_cast<size_t>(dstH) * 3 / 2);
+
+    const uint8_t* srcY = src.data.data();
+    const uint8_t* srcUV = src.data.data() + srcYSize;
+    uint8_t* dstY = out.data.data();
+    uint8_t* dstUV = out.data.data() + static_cast<size_t>(dstW) * static_cast<size_t>(dstH);
+
+    for (int y = 0; y < dstH; ++y) {
+        const int sy = std::min(src.height - 1, (y * src.height) / dstH);
+        for (int x = 0; x < dstW; ++x) {
+            const int sx = std::min(src.width - 1, (x * src.width) / dstW);
+            dstY[static_cast<size_t>(y) * static_cast<size_t>(dstW) + static_cast<size_t>(x)] =
+                srcY[static_cast<size_t>(sy) * static_cast<size_t>(src.width) + static_cast<size_t>(sx)];
+        }
+    }
+
+    const int srcUvH = src.height / 2;
+    const int dstUvH = dstH / 2;
+    for (int y = 0; y < dstUvH; ++y) {
+        const int sy = std::min(std::max(0, srcUvH - 1), (y * std::max(1, srcUvH)) / std::max(1, dstUvH));
+        for (int x = 0; x < dstW; x += 2) {
+            int sx = (x * src.width) / std::max(1, dstW);
+            if (sx & 1) sx -= 1;
+            sx = std::max(0, std::min(std::max(0, src.width - 2), sx));
+            const size_t srcIdx = static_cast<size_t>(sy) * static_cast<size_t>(src.width) + static_cast<size_t>(sx);
+            const size_t dstIdx = static_cast<size_t>(y) * static_cast<size_t>(dstW) + static_cast<size_t>(x);
+            dstUV[dstIdx] = srcUV[srcIdx];
+            if (x + 1 < dstW) {
+                dstUV[dstIdx + 1] = srcUV[srcIdx + 1];
+            }
+        }
+    }
+
+    return out;
 }
 
 void flipNv12Horizontal(std::vector<uint8_t>& data, int width, int height) {
@@ -1442,6 +1500,10 @@ bool Pipeline::init(const PusherConfig& config) {
     runtimeImageFlipMode_ = 0;
     runtimeNightVisionEnabled_ = false;
     runtimeNightVisionMode_ = 0;
+    runtimeProfileTargetWidth_ = std::max(2, config_.encoder.width);
+    runtimeProfileTargetHeight_ = std::max(2, config_.encoder.height);
+    runtimeProfileTargetFps_ = std::max(1, config_.encoder.fps);
+    runtimeProfileTargetBitrateKbps_ = std::max(100, config_.encoder.bitrate / 1000);
 
     if (!createComponents(config)) {
         std::cerr << "[Pipeline] Failed to create components" << std::endl;
@@ -1779,6 +1841,103 @@ void Pipeline::videoLoop() {
     constexpr int64_t kOverlayFreshMs = 160;
     int64_t lastEncodedFrameMs = 0;
     uint64_t lastSendDropForAdapt = 0;
+    int activeEncWidth = std::max(2, config_.encoder.width);
+    int activeEncHeight = std::max(2, config_.encoder.height);
+    int activeEncFps = std::max(1, config_.encoder.fps);
+    int activeEncBitrateKbps = std::max(100, config_.encoder.bitrate / 1000);
+
+    auto reconfigureEncodePath = [&](int targetWidth,
+                                     int targetHeight,
+                                     int targetFps,
+                                     int targetBitrateKbps,
+                                     const char* reason) -> bool {
+        targetWidth = std::max(2, targetWidth & ~1);
+        targetHeight = std::max(2, targetHeight & ~1);
+        targetFps = std::max(1, targetFps);
+        targetBitrateKbps = std::max(100, targetBitrateKbps);
+        if (targetWidth == activeEncWidth &&
+            targetHeight == activeEncHeight &&
+            targetFps == activeEncFps &&
+            targetBitrateKbps == activeEncBitrateKbps) {
+            return true;
+        }
+
+        std::cout << "[Stream Reconfig] reason=" << reason
+                  << " from=" << activeEncWidth << "x" << activeEncHeight
+                  << "@" << activeEncFps << "fps/" << activeEncBitrateKbps << "kbps"
+                  << " to=" << targetWidth << "x" << targetHeight
+                  << "@" << targetFps << "fps/" << targetBitrateKbps << "kbps"
+                  << std::endl;
+
+        auto nextEncoder = std::make_unique<AvcodecEncoder>();
+        EncoderConfig nextEncoderCfg = config_.encoder;
+        nextEncoderCfg.width = targetWidth;
+        nextEncoderCfg.height = targetHeight;
+        nextEncoderCfg.fps = targetFps;
+        nextEncoderCfg.bitrate = targetBitrateKbps * 1000;
+        if (!nextEncoder->init(nextEncoderCfg)) {
+            std::cerr << "[Stream Reconfig] encoder init failed, keep previous config" << std::endl;
+            return false;
+        }
+
+        StreamConfig nextStreamCfg = config_.stream;
+        nextStreamCfg.videoExtraData = nextEncoder->getExtraData();
+        nextStreamCfg.videoExtraDataSize = nextEncoder->getExtraDataSize();
+        nextStreamCfg.videoWidth = targetWidth;
+        nextStreamCfg.videoHeight = targetHeight;
+
+        bool streamReady = true;
+        {
+            std::lock_guard<std::mutex> streamLock(streamerMutex_);
+            if (streamer_->isConnected()) {
+                streamer_->disconnect();
+            }
+            if (livePushDesired_.load()) {
+                if (!streamer_->connect(nextStreamCfg)) {
+                    std::cerr << "[Stream Reconfig] RTMP reconnect failed after profile switch" << std::endl;
+                    livePushActive_ = false;
+                    streamReady = false;
+                } else {
+                    livePushActive_ = true;
+                }
+            } else {
+                livePushActive_ = false;
+            }
+        }
+
+        if (!streamReady && livePushDesired_.load()) {
+            return false;
+        }
+
+        encoder_ = std::move(nextEncoder);
+        config_.encoder = nextEncoderCfg;
+        config_.stream = nextStreamCfg;
+
+        {
+            std::lock_guard<std::mutex> queueLock(sendMutex);
+            sendQueue.clear();
+        }
+
+        if (recorder_ && recorder_->isEnabled()) {
+            recorder_->close();
+            if (!recorder_->init(
+                    config_.record,
+                    config_.stream.streamKey,
+                    config_.stream.videoExtraData,
+                    config_.stream.videoExtraDataSize,
+                    targetWidth,
+                    targetHeight)) {
+                std::cerr << "[Stream Reconfig] recorder re-init failed, disable local record" << std::endl;
+                recorder_.reset();
+            }
+        }
+
+        activeEncWidth = targetWidth;
+        activeEncHeight = targetHeight;
+        activeEncFps = targetFps;
+        activeEncBitrateKbps = targetBitrateKbps;
+        return true;
+    };
 
     while (running_) {
         auto frameStart = Clock::now();
@@ -1805,10 +1964,20 @@ void Pipeline::videoLoop() {
             continue;
         }
 
+        const int targetWidth = std::max(2, runtimeProfileTargetWidth_.load());
+        const int targetHeight = std::max(2, runtimeProfileTargetHeight_.load());
+        const int targetFps = std::max(1, runtimeProfileTargetFps_.load());
+        const int targetBitrateKbps = std::max(100, runtimeProfileTargetBitrateKbps_.load());
+        reconfigureEncodePath(
+            targetWidth,
+            targetHeight,
+            targetFps,
+            targetBitrateKbps,
+            "runtime-policy");
+
         auto captureTime = Clock::now();
         const int64_t frameTsMs = normalizeFrameTimestampMs(frame.pts);
 
-        const int targetFps = std::max(1, runtimeProfileTargetFps_.load());
         const int64_t minIntervalMs = std::max<int64_t>(1, 1000 / targetFps);
         if (lastEncodedFrameMs > 0 && frameTsMs - lastEncodedFrameMs < minIntervalMs) {
             continue;
@@ -1868,8 +2037,19 @@ void Pipeline::videoLoop() {
         }
 
         // 3. Encode the frame
+        Frame encodeFrame = frame;
+        if (frame.width != activeEncWidth || frame.height != activeEncHeight) {
+            encodeFrame = resizeNv12Nearest(frame, activeEncWidth, activeEncHeight);
+            if (encodeFrame.empty()) {
+                std::cerr << "[Pipeline] NV12 resize failed "
+                          << frame.width << "x" << frame.height
+                          << " -> " << activeEncWidth << "x" << activeEncHeight
+                          << std::endl;
+                continue;
+            }
+        }
         auto encodeStart = Clock::now();
-        EncodedPacket packet = encoder_->encode(frame);
+        EncodedPacket packet = encoder_->encode(encodeFrame);
         auto encodeEnd = Clock::now();
         
         if (packet.empty()) {
@@ -2035,6 +2215,7 @@ void Pipeline::videoLoop() {
                       << " | P99: " << p99Time / 1000 << "ms"
                       << " | Level: L" << runtimeProfileLevel_.load()
                       << "@" << runtimeProfileTargetFps_.load() << "fps/" << runtimeProfileTargetBitrateKbps_.load() << "kbps"
+                      << " " << activeEncWidth << "x" << activeEncHeight
                       << std::endl;
 
             const int64_t nowMs = wallClockMs();
@@ -2132,6 +2313,8 @@ void Pipeline::videoLoop() {
                     const int nextLevel = currentLevel - 1;
                     const auto cfg = levelConfig(nextLevel);
                     runtimeProfileLevel_ = nextLevel;
+                    runtimeProfileTargetWidth_ = cfg.width;
+                    runtimeProfileTargetHeight_ = cfg.height;
                     runtimeProfileTargetFps_ = cfg.fps;
                     runtimeProfileTargetBitrateKbps_ = cfg.bitrateKbps;
                     runtimeLastSwitchMs_ = nowMs;
@@ -2146,6 +2329,8 @@ void Pipeline::videoLoop() {
                     const int nextLevel = currentLevel + 1;
                     const auto cfg = levelConfig(nextLevel);
                     runtimeProfileLevel_ = nextLevel;
+                    runtimeProfileTargetWidth_ = cfg.width;
+                    runtimeProfileTargetHeight_ = cfg.height;
                     runtimeProfileTargetFps_ = cfg.fps;
                     runtimeProfileTargetBitrateKbps_ = cfg.bitrateKbps;
                     runtimeLastSwitchMs_ = nowMs;
@@ -2357,6 +2542,7 @@ void Pipeline::getRuntimeVisualSettings(int& imageFlipMode, bool& nightVisionEna
 }
 
 bool Pipeline::applyRuntimeStreamPolicy(
+    const std::string& streamProfile,
     const std::string& streamMode,
     int manualLevel,
     int autoMinLevel,
@@ -2366,8 +2552,24 @@ bool Pipeline::applyRuntimeStreamPolicy(
     int autoUpHoldSec,
     int autoDownHoldSec
 ) {
-    const std::string mode = (streamMode == "manual") ? "manual" : "auto";
-    const int manual = std::max(0, std::min(4, manualLevel));
+    auto normalizeProfile = [](const std::string& raw) {
+        std::string p = raw;
+        std::transform(p.begin(), p.end(), p.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (p == "360p" || p == "540p" || p == "720p" || p == "1080p" || p == "auto") return p;
+        return std::string("auto");
+    };
+    auto profileToLevel = [](const std::string& profile) {
+        if (profile == "360p") return 0;
+        if (profile == "540p") return 1;
+        if (profile == "720p") return 2;
+        if (profile == "1080p") return 4;
+        return 2;
+    };
+
+    const std::string profile = normalizeProfile(streamProfile);
+    const bool profileManual = profile != "auto";
+    const std::string mode = profileManual ? "manual" : ((streamMode == "manual") ? "manual" : "auto");
+    const int manual = profileManual ? profileToLevel(profile) : std::max(0, std::min(4, manualLevel));
     const int minL = std::max(0, std::min(4, std::min(autoMinLevel, autoMaxLevel)));
     const int maxL = std::max(0, std::min(4, std::max(autoMinLevel, autoMaxLevel)));
     std::string policy = autoPolicy;
@@ -2378,6 +2580,7 @@ bool Pipeline::applyRuntimeStreamPolicy(
 
     {
         std::lock_guard<std::mutex> lock(runtimeStreamMutex_);
+        runtimeStreamProfile_ = profile;
         runtimeStreamMode_ = mode;
         runtimeManualLevel_ = manual;
         runtimeAutoMinLevel_ = minL;
@@ -2391,6 +2594,8 @@ bool Pipeline::applyRuntimeStreamPolicy(
     if (mode == "manual") {
         const auto cfg = levelConfig(manual);
         runtimeProfileLevel_ = manual;
+        runtimeProfileTargetWidth_ = cfg.width;
+        runtimeProfileTargetHeight_ = cfg.height;
         runtimeProfileTargetFps_ = cfg.fps;
         runtimeProfileTargetBitrateKbps_ = cfg.bitrateKbps;
         runtimeLastSwitchMs_ = wallClockMs();
@@ -2402,6 +2607,8 @@ bool Pipeline::applyRuntimeStreamPolicy(
         if (current > maxL) current = maxL;
         const auto cfg = levelConfig(current);
         runtimeProfileLevel_ = current;
+        runtimeProfileTargetWidth_ = cfg.width;
+        runtimeProfileTargetHeight_ = cfg.height;
         runtimeProfileTargetFps_ = cfg.fps;
         runtimeProfileTargetBitrateKbps_ = cfg.bitrateKbps;
     }
@@ -2409,6 +2616,7 @@ bool Pipeline::applyRuntimeStreamPolicy(
 }
 
 void Pipeline::getRuntimeStreamPolicy(
+    std::string& streamProfile,
     std::string& streamMode,
     int& manualLevel,
     int& autoMinLevel,
@@ -2423,6 +2631,7 @@ void Pipeline::getRuntimeStreamPolicy(
 ) const {
     {
         std::lock_guard<std::mutex> lock(runtimeStreamMutex_);
+        streamProfile = runtimeStreamProfile_;
         streamMode = runtimeStreamMode_;
         manualLevel = runtimeManualLevel_;
         autoMinLevel = runtimeAutoMinLevel_;

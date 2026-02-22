@@ -72,6 +72,12 @@ function toText(value, fallback = '') {
   return text || fallback;
 }
 
+function normalizeProfile(value, fallback = 'auto') {
+  const p = toText(value, fallback).toLowerCase();
+  if (['auto', '360p', '540p', '720p', '1080p'].includes(p)) return p;
+  return fallback;
+}
+
 function normalizeRuntimeState(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const storageTotalGb = Math.max(0, Number(raw.storageTotalGb ?? raw.storage_total_gb ?? 0) || 0);
@@ -97,6 +103,7 @@ function normalizeRuntimeState(raw) {
     nightVisionEnabled: toBool(raw.nightVisionEnabled ?? raw.night_vision_enabled, false),
     nightVisionMode: Number(raw.nightVisionMode ?? raw.night_vision_mode ?? 0) || 0,
     streamMode: toText(raw.streamMode ?? raw.stream_mode, 'auto'),
+    streamProfile: normalizeProfile(raw.streamProfile ?? raw.stream_profile, 'auto'),
     profileLevel: Math.max(0, Math.min(4, Number(raw.profileLevel ?? raw.profile_level ?? 2) || 2)),
     targetFps: Math.max(1, Number(raw.targetFps ?? raw.target_fps ?? 15) || 15),
     targetBitrateKbps: Math.max(100, Number(raw.targetBitrateKbps ?? raw.target_bitrate_kbps ?? 600) || 600),
@@ -309,6 +316,7 @@ function publishCameraSettingsCommand(streamKey, settings = {}) {
   const nightVisionEnabled = toBool(settings.night_vision_enabled, true);
   const watermarkEnabled = toBool(settings.watermark_enabled, true);
   const streamMode = toText(settings.stream_mode, 'auto').toLowerCase() === 'manual' ? 'manual' : 'auto';
+  const streamProfile = normalizeProfile(settings.stream_profile, streamMode === 'manual' ? '720p' : 'auto');
   const manualLevel = Math.max(0, Math.min(4, Number(settings.manual_level ?? 2) || 2));
   const autoMinLevel = Math.max(0, Math.min(4, Number(settings.auto_min_level ?? 0) || 0));
   const autoMaxLevel = Math.max(0, Math.min(4, Number(settings.auto_max_level ?? 4) || 4));
@@ -334,6 +342,7 @@ function publishCameraSettingsCommand(streamKey, settings = {}) {
     person_enabled: personEnabled,
     sound_enabled: soundEnabled,
     stream_mode: streamMode,
+    stream_profile: streamProfile,
     manual_level: manualLevel,
     auto_min_level: autoMinLevel,
     auto_max_level: autoMaxLevel,
@@ -353,6 +362,7 @@ function publishCameraSettingsCommand(streamKey, settings = {}) {
       person_enabled: personEnabled,
       sound_enabled: soundEnabled,
       stream_mode: streamMode,
+      stream_profile: streamProfile,
       manual_level: manualLevel,
       auto_min_level: autoMinLevel,
       auto_max_level: autoMaxLevel,

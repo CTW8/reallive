@@ -109,6 +109,7 @@ db.exec(`
     night_vision_mode TEXT DEFAULT 'Auto',
     image_flip_mode TEXT DEFAULT 'Normal',
     watermark_enabled INTEGER DEFAULT 1,
+    stream_profile TEXT DEFAULT 'auto',
     stream_mode TEXT DEFAULT 'auto',
     manual_level INTEGER DEFAULT 2,
     auto_min_level INTEGER DEFAULT 0,
@@ -133,6 +134,7 @@ function ensureColumn(table, column, definition) {
 }
 
 ensureColumn('camera_settings', 'stream_mode', "TEXT DEFAULT 'auto'");
+ensureColumn('camera_settings', 'stream_profile', "TEXT DEFAULT 'auto'");
 ensureColumn('camera_settings', 'manual_level', 'INTEGER DEFAULT 2');
 ensureColumn('camera_settings', 'auto_min_level', 'INTEGER DEFAULT 0');
 ensureColumn('camera_settings', 'auto_max_level', 'INTEGER DEFAULT 4');

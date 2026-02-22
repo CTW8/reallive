@@ -78,6 +78,7 @@ function levelTarget(level) {
 }
 
 function buildEffectiveProfile(settings, device) {
+  const profileOption = String(device?.streamProfile || device?.stream_profile || settings?.stream_profile || 'auto').toLowerCase();
   if (device) {
     const mode = String(device.streamMode || device.stream_mode || settings?.stream_mode || 'auto').toLowerCase();
     const level = Math.max(0, Math.min(4, Number(device.profileLevel ?? device.profile_level ?? settings?.manual_level ?? 2) || 2));
@@ -85,6 +86,7 @@ function buildEffectiveProfile(settings, device) {
     const kbps = Math.max(100, Number(device.targetBitrateKbps ?? device.target_bitrate_kbps ?? levelTarget(level).kbps) || levelTarget(level).kbps);
     return {
       source: 'device',
+      profileOption,
       mode,
       level,
       targetFps: fps,
@@ -101,6 +103,7 @@ function buildEffectiveProfile(settings, device) {
   const target = levelTarget(level);
   return {
     source: 'settings',
+    profileOption,
     mode,
     level,
     targetFps: target.fps,
@@ -291,6 +294,12 @@ router.put('/:id/settings', (req, res) => {
   }
 
   const settingsPatch = req.body?.settings || req.body || {};
+  if (settingsPatch.stream_profile != null) {
+    const profile = String(settingsPatch.stream_profile).trim().toLowerCase();
+    if (!['auto', '360p', '540p', '720p', '1080p'].includes(profile)) {
+      return res.status(400).json({ error: 'stream_profile must be one of auto/360p/540p/720p/1080p' });
+    }
+  }
   if (settingsPatch.stream_mode != null) {
     const mode = String(settingsPatch.stream_mode).trim().toLowerCase();
     if (mode !== 'manual' && mode !== 'auto') {

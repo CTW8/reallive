@@ -23,14 +23,7 @@ const cameraSettingsLoading = ref(false)
 const cameraSettingsSaving = ref(false)
 const cameraSettingsError = ref('')
 const cameraSettingsForm = ref({
-  stream_mode: 'auto',
-  manual_level: 2,
-  auto_min_level: 0,
-  auto_max_level: 4,
-  auto_policy: 'balanced',
-  auto_cooldown_sec: 10,
-  auto_up_hold_sec: 25,
-  auto_down_hold_sec: 3,
+  stream_profile: 'auto',
 })
 
 const videoRef = ref(null)
@@ -104,12 +97,14 @@ const topBitrate = computed(() => {
 const topProfile = computed(() => {
   const effective = streamInfo.value?.effective_profile
   if (effective) {
+    const option = String(effective.profileOption || '').toLowerCase()
     const mode = String(effective.mode || '').toLowerCase()
     const level = Number(effective.level)
     const fps = Number(effective.targetFps)
     const kbps = Number(effective.targetBitrateKbps)
     if (Number.isFinite(level) && Number.isFinite(fps) && Number.isFinite(kbps)) {
-      const modeLabel = mode === 'manual' ? 'MANUAL' : (mode === 'auto' ? 'AUTO' : 'RUN')
+      const uiProfile = ['360p', '540p', '720p', '1080p'].includes(option) ? option : 'auto'
+      const modeLabel = mode === 'manual' ? uiProfile.toUpperCase() : (mode === 'auto' ? 'AUTO' : 'RUN')
       return `${modeLabel} · L${level} · ${Math.round(fps)}fps · ${Math.round(kbps)}kbps`
     }
   }
@@ -442,14 +437,7 @@ async function openCameraSettings() {
     const data = await cameraApi.getSettings(selectedCamera.value.id)
     const s = data?.settings || {}
     cameraSettingsForm.value = {
-      stream_mode: String(s.stream_mode || 'auto').toLowerCase() === 'manual' ? 'manual' : 'auto',
-      manual_level: Number(s.manual_level ?? 2) || 2,
-      auto_min_level: Number(s.auto_min_level ?? 0) || 0,
-      auto_max_level: Number(s.auto_max_level ?? 4) || 4,
-      auto_policy: String(s.auto_policy || 'balanced').toLowerCase(),
-      auto_cooldown_sec: Number(s.auto_cooldown_sec ?? 10) || 10,
-      auto_up_hold_sec: Number(s.auto_up_hold_sec ?? 25) || 25,
-      auto_down_hold_sec: Number(s.auto_down_hold_sec ?? 3) || 3,
+      stream_profile: String(s.stream_profile || 'auto').toLowerCase(),
     }
   } catch (err) {
     cameraSettingsError.value = err?.message || 'Failed to load camera settings'
@@ -469,21 +457,9 @@ async function saveCameraSettings() {
   cameraSettingsError.value = ''
   try {
     const form = { ...cameraSettingsForm.value }
-    form.manual_level = Math.max(0, Math.min(4, Number(form.manual_level) || 2))
-    form.auto_min_level = Math.max(0, Math.min(4, Number(form.auto_min_level) || 0))
-    form.auto_max_level = Math.max(0, Math.min(4, Number(form.auto_max_level) || 4))
-    if (form.auto_min_level > form.auto_max_level) {
-      const t = form.auto_min_level
-      form.auto_min_level = form.auto_max_level
-      form.auto_max_level = t
+    if (!['auto', '360p', '540p', '720p', '1080p'].includes(form.stream_profile)) {
+      form.stream_profile = 'auto'
     }
-    form.auto_cooldown_sec = Math.max(3, Math.min(120, Number(form.auto_cooldown_sec) || 10))
-    form.auto_up_hold_sec = Math.max(5, Math.min(180, Number(form.auto_up_hold_sec) || 25))
-    form.auto_down_hold_sec = Math.max(1, Math.min(60, Number(form.auto_down_hold_sec) || 3))
-    if (!['stable', 'balanced', 'quality'].includes(form.auto_policy)) {
-      form.auto_policy = 'balanced'
-    }
-    if (form.stream_mode !== 'manual') form.stream_mode = 'auto'
     await cameraApi.updateSettings(selectedCamera.value.id, { settings: form })
     showToast('Camera stream strategy saved')
     closeCameraSettings()
@@ -711,64 +687,15 @@ onBeforeUnmount(async () => {
         <div v-if="cameraSettingsLoading" class="settings-modal-loading">Loading...</div>
         <div v-else class="settings-modal-body">
           <label class="sf-row">
-            <span>Stream Mode</span>
-            <select v-model="cameraSettingsForm.stream_mode" class="sf-input">
-              <option value="auto">Auto Adapt</option>
-              <option value="manual">Manual</option>
+            <span>Streaming Profile</span>
+            <select v-model="cameraSettingsForm.stream_profile" class="sf-input">
+              <option value="auto">Auto</option>
+              <option value="360p">360p</option>
+              <option value="540p">540p</option>
+              <option value="720p">720p</option>
+              <option value="1080p">1080p</option>
             </select>
           </label>
-          <label v-if="cameraSettingsForm.stream_mode === 'manual'" class="sf-row">
-            <span>Manual Level</span>
-            <select v-model.number="cameraSettingsForm.manual_level" class="sf-input">
-              <option :value="0">L0</option>
-              <option :value="1">L1</option>
-              <option :value="2">L2</option>
-              <option :value="3">L3</option>
-              <option :value="4">L4</option>
-            </select>
-          </label>
-          <template v-else>
-            <label class="sf-row">
-              <span>Auto Min Level</span>
-              <select v-model.number="cameraSettingsForm.auto_min_level" class="sf-input">
-                <option :value="0">L0</option>
-                <option :value="1">L1</option>
-                <option :value="2">L2</option>
-                <option :value="3">L3</option>
-                <option :value="4">L4</option>
-              </select>
-            </label>
-            <label class="sf-row">
-              <span>Auto Max Level</span>
-              <select v-model.number="cameraSettingsForm.auto_max_level" class="sf-input">
-                <option :value="0">L0</option>
-                <option :value="1">L1</option>
-                <option :value="2">L2</option>
-                <option :value="3">L3</option>
-                <option :value="4">L4</option>
-              </select>
-            </label>
-            <label class="sf-row">
-              <span>Policy</span>
-              <select v-model="cameraSettingsForm.auto_policy" class="sf-input">
-                <option value="stable">Stable</option>
-                <option value="balanced">Balanced</option>
-                <option value="quality">Quality</option>
-              </select>
-            </label>
-            <label class="sf-row">
-              <span>Cooldown (sec)</span>
-              <input v-model.number="cameraSettingsForm.auto_cooldown_sec" class="sf-input" type="number" min="3" max="120" />
-            </label>
-            <label class="sf-row">
-              <span>Up Hold (sec)</span>
-              <input v-model.number="cameraSettingsForm.auto_up_hold_sec" class="sf-input" type="number" min="5" max="180" />
-            </label>
-            <label class="sf-row">
-              <span>Down Hold (sec)</span>
-              <input v-model.number="cameraSettingsForm.auto_down_hold_sec" class="sf-input" type="number" min="1" max="60" />
-            </label>
-          </template>
           <div v-if="cameraSettingsError" class="settings-modal-error">{{ cameraSettingsError }}</div>
           <div class="settings-modal-actions">
             <button class="mt-btn" @click="closeCameraSettings">Cancel</button>
