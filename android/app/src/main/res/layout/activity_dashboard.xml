@@ -40,9 +40,12 @@
                         android:orientation="horizontal">
 
                         <TextView
+                            android:id="@+id/dashboard_avatar"
                             android:layout_width="40dp"
                             android:layout_height="40dp"
-                            android:background="@drawable/bg_login_logo_gradient"
+                            android:background="@drawable/bg_avatar_circle"
+                            android:clickable="true"
+                            android:focusable="true"
                             android:gravity="center"
                             android:text="A"
                             android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
@@ -55,6 +58,7 @@
                             android:orientation="vertical">
 
                             <TextView
+                                android:id="@+id/dashboard_greeting"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Hi, Alex"
@@ -86,12 +90,13 @@
                             android:tint="?attr/colorOnSurfaceVariant" />
 
                         <View
+                            android:id="@+id/dashboard_notifications_dot"
                             android:layout_width="8dp"
                             android:layout_height="8dp"
                             android:layout_gravity="top|end"
                             android:layout_marginTop="8dp"
                             android:layout_marginEnd="8dp"
-                            android:background="@color/rl_error" />
+                            android:background="@drawable/bg_alert_badge_dot" />
                     </FrameLayout>
 
                     <ImageButton
@@ -135,7 +140,7 @@
                                     android:layout_width="18dp"
                                     android:layout_height="18dp"
                                     android:layout_gravity="center"
-                                    android:src="@drawable/ic_videocam_48"
+                                    android:src="@drawable/ic_rl_videocam_24"
                                     android:tint="@color/rl_success" />
                             </FrameLayout>
 
@@ -149,6 +154,7 @@
                                 android:textColor="?attr/colorOnSurface" />
 
                             <TextView
+                                android:id="@+id/stat_total_label"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Online"
@@ -175,7 +181,7 @@
                             <FrameLayout
                                 android:layout_width="34dp"
                                 android:layout_height="34dp"
-                                android:background="#4B232A">
+                                android:background="#4A232A">
 
                                 <ImageView
                                     android:layout_width="18dp"
@@ -195,6 +201,7 @@
                                 android:textColor="?attr/colorOnSurface" />
 
                             <TextView
+                                android:id="@+id/stat_online_label"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Offline"
@@ -227,7 +234,7 @@
                                     android:layout_width="18dp"
                                     android:layout_height="18dp"
                                     android:layout_gravity="center"
-                                    android:src="@drawable/ic_rl_notifications_active_24"
+                                    android:src="@drawable/ic_rl_motion_sensor_active_24"
                                     android:tint="@color/rl_warning" />
                             </FrameLayout>
 
@@ -241,6 +248,7 @@
                                 android:textColor="?attr/colorOnSurface" />
 
                             <TextView
+                                android:id="@+id/stat_streaming_label"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Alerts"
@@ -258,269 +266,7 @@
                     android:orientation="horizontal">
 
                     <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Live Preview"
-                        android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-                        android:textColor="?attr/colorOnBackground" />
-
-                    <TextView
-                        android:id="@+id/btn_open_camera_list"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="See All"
-                        android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
-                        android:textColor="?attr/colorPrimary" />
-                </LinearLayout>
-
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:scrollbars="none">
-
-                    <LinearLayout
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-
-                        <com.google.android.material.card.MaterialCardView
-                            android:id="@+id/btn_preview_front"
-                            android:layout_width="240dp"
-                            android:layout_height="188dp"
-                            app:cardBackgroundColor="#211F26"
-                            app:cardCornerRadius="12dp"
-                            app:cardElevation="0dp">
-
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:orientation="vertical">
-
-                                <FrameLayout
-                                    android:layout_width="match_parent"
-                                    android:layout_height="136dp"
-                                    android:background="#1A1825">
-
-                                    <ImageView
-                                        android:layout_width="56dp"
-                                        android:layout_height="56dp"
-                                        android:layout_gravity="center"
-                                        android:src="@drawable/ic_videocam_48"
-                                        android:tint="#33FFFFFF" />
-
-                                    <TextView
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:layout_margin="8dp"
-                                        android:background="@color/rl_error"
-                                        android:paddingStart="8dp"
-                                        android:paddingTop="3dp"
-                                        android:paddingEnd="8dp"
-                                        android:paddingBottom="3dp"
-                                        android:text="LIVE"
-                                        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-                                        android:textColor="@color/white" />
-
-                                    <TextView
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:layout_gravity="bottom|end"
-                                        android:layout_margin="6dp"
-                                        android:background="#99000000"
-                                        android:paddingStart="6dp"
-                                        android:paddingTop="2dp"
-                                        android:paddingEnd="6dp"
-                                        android:paddingBottom="2dp"
-                                        android:text="09:41:23"
-                                        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-                                        android:textColor="@color/white" />
-                                </FrameLayout>
-
-                                <LinearLayout
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:orientation="vertical"
-                                    android:paddingStart="12dp"
-                                    android:paddingTop="10dp"
-                                    android:paddingEnd="12dp">
-
-                                    <TextView
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:text="Front Door"
-                                        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
-                                        android:textColor="?attr/colorOnSurface" />
-
-                                    <TextView
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:layout_marginTop="2dp"
-                                        android:text="Main Entrance"
-                                        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                                        android:textColor="?attr/colorOnSurfaceVariant" />
-                                </LinearLayout>
-                            </LinearLayout>
-                        </com.google.android.material.card.MaterialCardView>
-
-                        <com.google.android.material.card.MaterialCardView
-                            android:id="@+id/btn_preview_garage"
-                            android:layout_width="240dp"
-                            android:layout_height="188dp"
-                            android:layout_marginStart="10dp"
-                            app:cardBackgroundColor="#211F26"
-                            app:cardCornerRadius="12dp"
-                            app:cardElevation="0dp">
-
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:orientation="vertical">
-
-                                <FrameLayout
-                                    android:layout_width="match_parent"
-                                    android:layout_height="136dp"
-                                    android:background="#1D1828">
-
-                                    <ImageView
-                                        android:layout_width="56dp"
-                                        android:layout_height="56dp"
-                                        android:layout_gravity="center"
-                                        android:src="@drawable/ic_videocam_48"
-                                        android:tint="#33FFFFFF" />
-
-                                    <TextView
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:layout_margin="8dp"
-                                        android:background="@color/rl_error"
-                                        android:paddingStart="8dp"
-                                        android:paddingTop="3dp"
-                                        android:paddingEnd="8dp"
-                                        android:paddingBottom="3dp"
-                                        android:text="LIVE"
-                                        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-                                        android:textColor="@color/white" />
-
-                                    <TextView
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:layout_gravity="bottom|end"
-                                        android:layout_margin="6dp"
-                                        android:background="#99000000"
-                                        android:paddingStart="6dp"
-                                        android:paddingTop="2dp"
-                                        android:paddingEnd="6dp"
-                                        android:paddingBottom="2dp"
-                                        android:text="09:41:23"
-                                        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-                                        android:textColor="@color/white" />
-                                </FrameLayout>
-
-                                <LinearLayout
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:orientation="vertical"
-                                    android:paddingStart="12dp"
-                                    android:paddingTop="10dp"
-                                    android:paddingEnd="12dp">
-
-                                    <TextView
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:text="Garage"
-                                        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
-                                        android:textColor="?attr/colorOnSurface" />
-
-                                    <TextView
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:layout_marginTop="2dp"
-                                        android:text="Side Building"
-                                        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                                        android:textColor="?attr/colorOnSurfaceVariant" />
-                                </LinearLayout>
-                            </LinearLayout>
-                        </com.google.android.material.card.MaterialCardView>
-
-                        <com.google.android.material.card.MaterialCardView
-                            android:id="@+id/btn_preview_backyard"
-                            android:layout_width="240dp"
-                            android:layout_height="188dp"
-                            android:layout_marginStart="10dp"
-                            android:layout_marginEnd="4dp"
-                            app:cardBackgroundColor="#211F26"
-                            app:cardCornerRadius="12dp"
-                            app:cardElevation="0dp">
-
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:orientation="vertical">
-
-                                <FrameLayout
-                                    android:layout_width="match_parent"
-                                    android:layout_height="136dp"
-                                    android:background="#1A1522">
-
-                                    <ImageView
-                                        android:layout_width="56dp"
-                                        android:layout_height="56dp"
-                                        android:layout_gravity="center"
-                                        android:src="@drawable/ic_videocam_48"
-                                        android:tint="#33FFFFFF" />
-
-                                    <TextView
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:layout_margin="8dp"
-                                        android:background="@color/rl_status_offline_bg"
-                                        android:paddingStart="8dp"
-                                        android:paddingTop="3dp"
-                                        android:paddingEnd="8dp"
-                                        android:paddingBottom="3dp"
-                                        android:text="OFFLINE"
-                                        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-                                        android:textColor="?attr/colorOnSurfaceVariant" />
-                                </FrameLayout>
-
-                                <LinearLayout
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:orientation="vertical"
-                                    android:paddingStart="12dp"
-                                    android:paddingTop="10dp"
-                                    android:paddingEnd="12dp">
-
-                                    <TextView
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:text="Backyard"
-                                        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
-                                        android:textColor="?attr/colorOnSurface" />
-
-                                    <TextView
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:layout_marginTop="2dp"
-                                        android:text="Garden Area"
-                                        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                                        android:textColor="?attr/colorOnSurfaceVariant" />
-                                </LinearLayout>
-                            </LinearLayout>
-                        </com.google.android.material.card.MaterialCardView>
-                    </LinearLayout>
-                </HorizontalScrollView>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <TextView
+                        android:id="@+id/dashboard_all_cameras_title"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
@@ -529,43 +275,614 @@
                         android:textColor="?attr/colorOnBackground" />
 
                     <TextView
-                        android:id="@+id/btn_filter_cameras"
+                        android:id="@+id/btn_open_camera_list"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Filter"
+                        android:text="Manage"
                         android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
                         android:textColor="?attr/colorPrimary" />
                 </LinearLayout>
 
-                <TextView
-                    android:id="@+id/empty_hint"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="@string/dashboard_empty_hint"
-                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:visibility="gone" />
+                    android:orientation="vertical">
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/camera_recycler"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:nestedScrollingEnabled="false"
-                    android:paddingBottom="8dp" />
+                    <LinearLayout
+                        android:id="@+id/dashboard_item_front"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <FrameLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_camera_preview"
+                            android:clipToOutline="true">
+
+                            <ImageView
+                                android:id="@+id/dashboard_item_front_thumb"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:layout_gravity="center"
+                                android:padding="11dp"
+                                android:scaleType="centerInside"
+                                android:src="@drawable/ic_rl_door_front_24"
+                                android:tint="?attr/colorOnSurfaceVariant" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/dashboard_item_front_title"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Front Door"
+                                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_front_subtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Main Entrance · 2 events today · Last: Person 2m ago"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:id="@+id/dashboard_item_front_dot"
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="@drawable/bg_status_dot_orange" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_front_status"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:text="REC"
+                                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                                android:textColor="@color/rl_warning" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/dashboard_item_garage"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <FrameLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_camera_preview"
+                            android:clipToOutline="true">
+
+                            <ImageView
+                                android:id="@+id/dashboard_item_garage_thumb"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:layout_gravity="center"
+                                android:padding="11dp"
+                                android:scaleType="centerInside"
+                                android:src="@drawable/ic_rl_garage_24"
+                                android:tint="?attr/colorOnSurfaceVariant" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/dashboard_item_garage_title"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Garage"
+                                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_garage_subtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Side Building · 1 event today · Last: Motion 15m ago"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:id="@+id/dashboard_item_garage_dot"
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="@drawable/bg_status_dot_green" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_garage_status"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:text="Online"
+                                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                                android:textColor="@color/rl_success" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/dashboard_item_living"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <FrameLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_camera_preview"
+                            android:clipToOutline="true">
+
+                            <ImageView
+                                android:id="@+id/dashboard_item_living_thumb"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:layout_gravity="center"
+                                android:padding="11dp"
+                                android:scaleType="centerInside"
+                                android:src="@drawable/ic_rl_living_24"
+                                android:tint="?attr/colorOnSurfaceVariant" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/dashboard_item_living_title"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Living Room"
+                                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_living_subtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Indoor · 0 events today"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:id="@+id/dashboard_item_living_dot"
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="@drawable/bg_status_dot_green" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_living_status"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:text="Online"
+                                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                                android:textColor="@color/rl_success" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/dashboard_item_backyard"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <FrameLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_camera_preview"
+                            android:clipToOutline="true">
+
+                            <ImageView
+                                android:id="@+id/dashboard_item_backyard_thumb"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:layout_gravity="center"
+                                android:padding="11dp"
+                                android:scaleType="centerInside"
+                                android:src="@drawable/ic_rl_deck_24"
+                                android:tint="?attr/colorOnSurfaceVariant" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/dashboard_item_backyard_title"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Backyard"
+                                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_backyard_subtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Garden · 1 issue today · Offline since 8:30 AM"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:id="@+id/dashboard_item_backyard_dot"
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="@drawable/bg_status_dot_red" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_backyard_status"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:text="Offline"
+                                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                                android:textColor="@color/rl_error" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/dashboard_item_warehouse"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <FrameLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_camera_preview"
+                            android:clipToOutline="true">
+
+                            <ImageView
+                                android:id="@+id/dashboard_item_warehouse_thumb"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:layout_gravity="center"
+                                android:padding="11dp"
+                                android:scaleType="centerInside"
+                                android:src="@drawable/ic_rl_warehouse_24"
+                                android:tint="?attr/colorOnSurfaceVariant" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/dashboard_item_warehouse_title"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Warehouse"
+                                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_warehouse_subtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Storage · 2 events today"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:id="@+id/dashboard_item_warehouse_dot"
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="@drawable/bg_status_dot_green" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_warehouse_status"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:text="Online"
+                                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                                android:textColor="@color/rl_success" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/dashboard_item_bedroom"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <FrameLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_camera_preview"
+                            android:clipToOutline="true">
+
+                            <ImageView
+                                android:id="@+id/dashboard_item_bedroom_thumb"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:layout_gravity="center"
+                                android:padding="11dp"
+                                android:scaleType="centerInside"
+                                android:src="@drawable/ic_rl_bedroom_parent_24"
+                                android:tint="?attr/colorOnSurfaceVariant" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/dashboard_item_bedroom_title"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Bedroom"
+                                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_bedroom_subtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Indoor · 0 events today"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:id="@+id/dashboard_item_bedroom_dot"
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="@drawable/bg_status_dot_green" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_bedroom_status"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:text="Online"
+                                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                                android:textColor="@color/rl_success" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/dashboard_item_office"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <FrameLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_camera_preview"
+                            android:clipToOutline="true">
+
+                            <ImageView
+                                android:id="@+id/dashboard_item_office_thumb"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:layout_gravity="center"
+                                android:padding="11dp"
+                                android:scaleType="centerInside"
+                                android:src="@drawable/ic_rl_meeting_room_24"
+                                android:tint="?attr/colorOnSurfaceVariant" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/dashboard_item_office_title"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Office"
+                                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_office_subtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Indoor · 1 event today"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:id="@+id/dashboard_item_office_dot"
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="@drawable/bg_status_dot_green" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_office_status"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:text="Online"
+                                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                                android:textColor="@color/rl_success" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/dashboard_item_parking"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <FrameLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_camera_preview"
+                            android:clipToOutline="true">
+
+                            <ImageView
+                                android:id="@+id/dashboard_item_parking_thumb"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:layout_gravity="center"
+                                android:padding="11dp"
+                                android:scaleType="centerInside"
+                                android:src="@drawable/ic_rl_local_parking_24"
+                                android:tint="?attr/colorOnSurfaceVariant" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/dashboard_item_parking_title"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Parking Lot"
+                                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_parking_subtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Outdoor · 0 events today"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:id="@+id/dashboard_item_parking_dot"
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="@drawable/bg_status_dot_red" />
+
+                            <TextView
+                                android:id="@+id/dashboard_item_parking_status"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:text="Offline"
+                                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                                android:textColor="@color/rl_error" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
             </LinearLayout>
         </ScrollView>
-
-        <com.google.android.material.bottomnavigation.BottomNavigationView
-            android:id="@+id/bottom_nav"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="?attr/colorSurface"
-            app:itemIconTint="@color/bottom_nav_item_tint"
-            app:itemTextColor="@color/bottom_nav_item_tint"
-            app:labelVisibilityMode="labeled"
-            app:menu="@menu/menu_main_tabs" />
     </LinearLayout>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -574,10 +891,21 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_marginEnd="20dp"
-        android:layout_marginBottom="84dp"
+        android:layout_marginBottom="96dp"
         android:contentDescription="@string/dashboard_action_add"
-        android:src="@drawable/ic_rl_add_24"
-        app:backgroundTint="@color/auth_primary"
-        app:tint="@color/auth_on_primary" />
+        app:backgroundTint="@color/rl_brand_dark"
+        app:srcCompat="@drawable/ic_rl_add_24"
+        app:tint="@color/white" />
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@color/rl_surface"
+        app:itemIconTint="@color/bottom_nav_item_tint"
+        app:itemTextColor="@color/bottom_nav_item_tint"
+        app:labelVisibilityMode="labeled"
+        app:menu="@menu/menu_main_tabs" />
 
 </FrameLayout>

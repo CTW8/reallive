@@ -2,6 +2,8 @@ const express = require('express');
 const authMiddleware = require('../middleware/auth');
 const Alert = require('../models/alert');
 const Camera = require('../models/camera');
+const CameraSettings = require('../models/camera-settings');
+const UserSettings = require('../models/user-settings');
 const { getSeiInfo } = require('../services/seiMonitor');
 const { getTimeline } = require('../services/historyService');
 
@@ -9,6 +11,81 @@ const router = express.Router();
 router.use(authMiddleware);
 const lastHydrateByUser = new Map();
 const HYDRATE_MIN_INTERVAL_MS = 5000;
+const DEFAULT_NOTIFICATION_PREFS = Object.freeze({
+  pushEnabled: true,
+  motionEnabled: true,
+  personEnabled: true,
+  soundEnabled: false,
+});
+
+function getAlertPrefs(userId) {
+  const stored = UserSettings.getByUserId(userId);
+  const n = stored?.notifications || {};
+  const toBool = (value, fallback) => {
+    if (typeof value === 'boolean') return value;
+    if (value == null) return fallback;
+    return String(value).toLowerCase() === 'true';
+  };
+  return {
+    pushEnabled: toBool(n.email, DEFAULT_NOTIFICATION_PREFS.pushEnabled),
+    motionEnabled: toBool(n.sms, DEFAULT_NOTIFICATION_PREFS.motionEnabled),
+    personEnabled: toBool(n.webhook, DEFAULT_NOTIFICATION_PREFS.personEnabled),
+    soundEnabled: toBool(n.sound, DEFAULT_NOTIFICATION_PREFS.soundEnabled),
+  };
+}
+
+function canSeeAlertByPrefs(alert, prefs) {
+  const t = String(alert?.type || '').toLowerCase();
+  if (t.includes('person')) return prefs.personEnabled;
+  if (t.includes('motion')) return prefs.motionEnabled;
+  if (t.includes('sound') || t.includes('audio') || t.includes('noise')) return prefs.soundEnabled;
+  return true;
+}
+
+function detectionKind(rawType) {
+  const t = String(rawType || '').toLowerCase();
+  if (t.includes('person')) return 'person';
+  if (t.includes('motion')) return 'motion';
+  if (t.includes('sound') || t.includes('audio') || t.includes('noise')) return 'sound';
+  return 'other';
+}
+
+function filterAlertsByPrefs(items, prefs) {
+  if (!Array.isArray(items) || !items.length) return [];
+  return items.filter((row) => canSeeAlertByPrefs(row, prefs));
+}
+
+function getCameraSettingsMap(userId) {
+  const map = new Map();
+  const cameras = Camera.findByUserId(userId);
+  for (const cam of cameras) {
+    try {
+      map.set(Number(cam.id), CameraSettings.getByCameraId(cam.id));
+    } catch {
+      map.set(Number(cam.id), null);
+    }
+  }
+  return map;
+}
+
+function canSeeAlertByCameraSettings(alert, cameraSettingsMap) {
+  const cameraId = Number(alert?.camera_id || 0);
+  if (!Number.isFinite(cameraId) || cameraId <= 0) return true;
+  const cs = cameraSettingsMap.get(cameraId);
+  if (!cs) return true;
+  const kind = detectionKind(alert?.type);
+  if (kind === 'person') return Boolean(cs.person_enabled);
+  if (kind === 'motion') return Boolean(cs.motion_enabled);
+  if (kind === 'sound') return Boolean(cs.sound_enabled);
+  return true;
+}
+
+function filterAlertsBySettings(items, prefs, cameraSettingsMap) {
+  if (!Array.isArray(items) || !items.length) return [];
+  return items.filter((row) => {
+    return canSeeAlertByPrefs(row, prefs) && canSeeAlertByCameraSettings(row, cameraSettingsMap);
+  });
+}
 
 function parseAlertEventTsMs(alert) {
   const desc = String(alert?.description || '');
@@ -76,7 +153,15 @@ function enrichAlertsWithEventTs(userId, items) {
   });
 }
 
-function hydratePersonAlertsForUser(userId) {
+function canGenerateByCameraSettings(kind, cameraSettings) {
+  if (!cameraSettings) return true;
+  if (kind === 'person') return Boolean(cameraSettings.person_enabled);
+  if (kind === 'motion') return Boolean(cameraSettings.motion_enabled);
+  if (kind === 'sound') return Boolean(cameraSettings.sound_enabled);
+  return true;
+}
+
+function hydrateDetectionAlertsForUser(userId) {
   const now = Date.now();
   const last = Number(lastHydrateByUser.get(userId) || 0);
   if (now - last < HYDRATE_MIN_INTERVAL_MS) return;
@@ -84,35 +169,42 @@ function hydratePersonAlertsForUser(userId) {
 
   const cameras = Camera.findByUserId(userId);
   for (const camera of cameras) {
+    const cameraSettings = CameraSettings.getByCameraId(camera.id);
     try {
       const seen = new Set();
       const sei = getSeiInfo(camera.stream_key);
       const seiEvents = Array.isArray(sei?.personEvents) ? sei.personEvents : [];
       for (const evt of seiEvents.slice(-50)) {
-        const key = `${Math.floor(Number(evt?.ts || 0))}:${evt?.bbox?.x || 0}:${evt?.bbox?.y || 0}:${evt?.bbox?.w || 0}:${evt?.bbox?.h || 0}`;
+        const kind = detectionKind(evt?.type || 'person-detected');
+        if (!canGenerateByCameraSettings(kind, cameraSettings)) continue;
+        const key = `${kind}:${Math.floor(Number(evt?.ts || 0))}:${evt?.bbox?.x || 0}:${evt?.bbox?.y || 0}:${evt?.bbox?.w || 0}:${evt?.bbox?.h || 0}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        Alert.createPersonDetectedEvent(userId, camera, evt);
+        Alert.createDetectionEvent(userId, camera, evt?.type || 'person-detected', evt);
       }
 
       const timelineStart = now - 24 * 3600 * 1000;
       const timeline = getTimeline(camera.stream_key, { start: timelineStart, end: now });
       const timelineEvents = Array.isArray(timeline?.events) ? timeline.events : [];
-      for (const evt of timelineEvents.slice(-200)) {
-        if (String(evt?.type || '') !== 'person-detected') continue;
-        const key = `${Math.floor(Number(evt?.ts || 0))}:${evt?.bbox?.x || 0}:${evt?.bbox?.y || 0}:${evt?.bbox?.w || 0}:${evt?.bbox?.h || 0}`;
+      for (const evt of timelineEvents.slice(-400)) {
+        const kind = detectionKind(evt?.type);
+        if (kind === 'other') continue;
+        if (!canGenerateByCameraSettings(kind, cameraSettings)) continue;
+        const key = `${kind}:${Math.floor(Number(evt?.ts || 0))}:${evt?.bbox?.x || 0}:${evt?.bbox?.y || 0}:${evt?.bbox?.w || 0}:${evt?.bbox?.h || 0}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        Alert.createPersonDetectedEvent(userId, camera, evt);
+        Alert.createDetectionEvent(userId, camera, evt?.type, evt);
       }
     } catch (err) {
-      console.error('[Alerts] hydrate person events failed:', err?.message || err);
+      console.error('[Alerts] hydrate detection events failed:', err?.message || err);
     }
   }
 }
 
 router.get('/', (req, res) => {
-  hydratePersonAlertsForUser(req.user.id);
+  hydrateDetectionAlertsForUser(req.user.id);
+  const prefs = getAlertPrefs(req.user.id);
+  const cameraSettingsMap = getCameraSettingsMap(req.user.id);
   const limitRaw = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
   const offsetRaw = req.query.offset ? parseInt(req.query.offset, 10) : undefined;
   const pageRaw = req.query.page ? parseInt(req.query.page, 10) : undefined;
@@ -133,20 +225,32 @@ router.get('/', (req, res) => {
   };
 
   if (paged) {
-    const data = Alert.findByUserIdPaged(req.user.id, filters);
-    const items = enrichAlertsWithEventTs(req.user.id, data.items);
+    const safeLimit = Math.max(1, Math.min(200, Number(filters.limit) || 20));
+    const safeOffset = Math.max(0, Number(filters.offset) || 0);
+    const rawAll = Alert.findByUserId(req.user.id, { ...filters, limit: 5000 });
+    const filtered = filterAlertsBySettings(
+      enrichAlertsWithEventTs(req.user.id, rawAll),
+      prefs,
+      cameraSettingsMap
+    );
+    const total = filtered.length;
+    const items = filtered.slice(safeOffset, safeOffset + safeLimit);
     return res.json({
       items,
-      total: data.total,
-      limit: data.limit,
-      offset: data.offset,
-      page: Math.floor(data.offset / data.limit) + 1,
-      total_pages: Math.max(1, Math.ceil(data.total / data.limit)),
+      total,
+      limit: safeLimit,
+      offset: safeOffset,
+      page: Math.floor(safeOffset / safeLimit) + 1,
+      total_pages: Math.max(1, Math.ceil(total / safeLimit)),
     });
   }
 
   const alerts = Alert.findByUserId(req.user.id, filters);
-  return res.json(enrichAlertsWithEventTs(req.user.id, alerts));
+  return res.json(filterAlertsBySettings(
+    enrichAlertsWithEventTs(req.user.id, alerts),
+    prefs,
+    cameraSettingsMap
+  ));
 });
 
 router.get('/stats', (req, res) => {
@@ -155,13 +259,24 @@ router.get('/stats', (req, res) => {
 });
 
 router.get('/unread-count', (req, res) => {
-  const count = Alert.getUnreadCount(req.user.id);
+  const prefs = getAlertPrefs(req.user.id);
+  const cameraSettingsMap = getCameraSettingsMap(req.user.id);
+  if (!prefs.pushEnabled) {
+    return res.json({ count: 0 });
+  }
+  const unread = Alert.findByUserId(req.user.id, { status: 'new', limit: 5000 });
+  const count = filterAlertsBySettings(unread, prefs, cameraSettingsMap).length;
   res.json({ count });
 });
 
 router.get('/:id', (req, res) => {
+  const prefs = getAlertPrefs(req.user.id);
+  const cameraSettingsMap = getCameraSettingsMap(req.user.id);
   const alert = Alert.findById(req.params.id, req.user.id);
   if (!alert) {
+    return res.status(404).json({ error: 'Alert not found' });
+  }
+  if (!canSeeAlertByPrefs(alert, prefs) || !canSeeAlertByCameraSettings(alert, cameraSettingsMap)) {
     return res.status(404).json({ error: 'Alert not found' });
   }
   res.json(alert);

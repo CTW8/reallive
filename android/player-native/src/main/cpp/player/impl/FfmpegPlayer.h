@@ -14,6 +14,8 @@ public:
     ~FfmpegPlayer() override;
 
     bool play(const PlayerSource& source) override;
+    void pause() override;
+    void resume() override;
     void seekTo(int64_t positionMs) override;
     void stop() override;
     void setSurface(ANativeWindow* window) override;

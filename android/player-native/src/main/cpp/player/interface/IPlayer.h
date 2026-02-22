@@ -11,6 +11,8 @@ public:
     virtual ~IPlayer() = default;
 
     virtual bool play(const PlayerSource& source) = 0;
+    virtual void pause() = 0;
+    virtual void resume() = 0;
     virtual void seekTo(int64_t positionMs) = 0;
     virtual void stop() = 0;
     virtual void setSurface(ANativeWindow* window) = 0;

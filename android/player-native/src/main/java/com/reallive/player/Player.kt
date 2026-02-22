@@ -9,6 +9,10 @@ interface Player {
 
     fun playHistory(url: String, startMs: Long = 0L)
 
+    fun pause()
+
+    fun resume()
+
     fun seek(tsMs: Long)
 
     fun stop()

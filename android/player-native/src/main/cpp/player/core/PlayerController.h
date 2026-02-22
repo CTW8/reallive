@@ -17,6 +17,8 @@ public:
 
     bool playLive(const std::string& url);
     bool playHistory(const std::string& url, int64_t startMs);
+    void pause();
+    void resume();
     void seekTo(int64_t positionMs);
     void stop();
     void setSurface(ANativeWindow* window);

@@ -8,6 +8,7 @@ const SRS_API = config.srsApi || 'http://localhost:1985';
 const POLL_INTERVAL = 1000; // 1 second (reduced from 5s for lower latency)
 const SUMMARY_LOG_INTERVAL = 10000; // 10s summary log to avoid noisy per-poll logs
 const OFFLINE_GRACE_POLLS = Math.max(1, Number(process.env.SRS_OFFLINE_GRACE_POLLS || 3));
+const SRS_SYNC_BUILD_TAG = 'srs-sync-sei-v5';
 
 let io = null;
 let timer = null;
@@ -30,6 +31,25 @@ function extractStreamKey(name) {
   if (streamKey.includes('/')) {
     const parts = streamKey.split('/');
     streamKey = parts[parts.length - 1];
+  }
+  streamKey = streamKey.split('?')[0].split('#')[0];
+  if (streamKey.toLowerCase().endsWith('.flv')) {
+    streamKey = streamKey.slice(0, -4);
+  }
+  return streamKey;
+}
+
+function normalizeStreamKeyForCache(value) {
+  if (!value) return '';
+  let streamKey = String(value).trim();
+  if (!streamKey) return '';
+  if (streamKey.includes('/')) {
+    const parts = streamKey.split('/');
+    streamKey = parts[parts.length - 1];
+  }
+  streamKey = streamKey.split('?')[0].split('#')[0];
+  if (streamKey.toLowerCase().endsWith('.flv')) {
+    streamKey = streamKey.slice(0, -4);
   }
   return streamKey;
 }
@@ -144,6 +164,7 @@ async function syncOnce() {
       };
       
       streamInfoCache.set(streamKey, cachedInfo);
+      streamInfoCache.set(`${streamKey}.flv`, cachedInfo);
     }
   }
 
@@ -223,6 +244,7 @@ async function syncOnce() {
 
       // Remove cached info
       streamInfoCache.delete(streamKey);
+      streamInfoCache.delete(`${streamKey}.flv`);
       prevFrameData.delete(streamKey);
       activeStreams.delete(streamKey);
     }
@@ -250,14 +272,27 @@ async function syncOnce() {
 }
 
 function getStreamInfo(streamKey) {
-  return streamInfoCache.get(streamKey) || null;
+  const raw = String(streamKey || '').trim();
+  const normalized = normalizeStreamKeyForCache(raw);
+  if (!raw && !normalized) return null;
+  const info = (
+    streamInfoCache.get(normalized) ||
+    streamInfoCache.get(raw) ||
+    streamInfoCache.get(`${normalized}.flv`) ||
+    streamInfoCache.get(`${raw}.flv`) ||
+    null
+  );
+  if (!info && activeStreams.size > 0) {
+    console.log(`[SRS Sync] streamInfo miss raw="${raw}" normalized="${normalized}" active=${activeStreams.size}`);
+  }
+  return info;
 }
 
 function startSrsSync(socketIo) {
   io = socketIo;
   syncOnce();
   timer = setInterval(syncOnce, POLL_INTERVAL);
-  console.log(`[SRS Sync] Started polling SRS at ${SRS_API} every ${POLL_INTERVAL / 1000}s`);
+  console.log(`[SRS Sync] Started polling SRS at ${SRS_API} every ${POLL_INTERVAL / 1000}s tag=${SRS_SYNC_BUILD_TAG}`);
 }
 
 function stopSrsSync() {

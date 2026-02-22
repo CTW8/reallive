@@ -1201,6 +1201,8 @@ bool isAnnexBPacket(const std::vector<uint8_t>& data) {
 std::string buildTelemetryPayload(
     const PusherConfig& config,
     const SystemTelemetry& telemetry,
+    double outFps,
+    double outBitrateBps,
     int64_t nowMs,
     const PersonBox& personState,
     const std::vector<PersonBox>& personEvents
@@ -1223,7 +1225,10 @@ std::string buildTelemetryPayload(
             << "\"mem_total_mb\":" << formatNumber(telemetry.memoryTotalMb) << ","
             << "\"storage_pct\":" << formatNumber(telemetry.storagePct) << ","
             << "\"storage_used_gb\":" << formatNumber(telemetry.storageUsedGb, 2) << ","
-            << "\"storage_total_gb\":" << formatNumber(telemetry.storageTotalGb, 2)
+            << "\"storage_total_gb\":" << formatNumber(telemetry.storageTotalGb, 2) << ","
+            << "\"stream_out_fps\":" << formatNumber(outFps, 2) << ","
+            << "\"stream_out_bitrate_bps\":" << static_cast<long long>(std::llround(std::max(0.0, outBitrateBps))) << ","
+            << "\"stream_out_bitrate_kbps\":" << formatNumber(outBitrateBps / 1000.0, 1)
         << "},"
         << "\"camera\":{"
             << "\"width\":" << config.camera.width << ","
@@ -1487,6 +1492,7 @@ void Pipeline::videoLoop() {
     auto lastFpsTime = Clock::now();
     auto lastLogTime = Clock::now();
     auto lastSeiTime = Clock::now() - std::chrono::milliseconds(2000);
+    auto lastSeiLogTime = Clock::now() - std::chrono::seconds(10);
     uint64_t droppedFrames = 0;
     uint64_t totalProcessTime = 0;
     uint64_t maxProcessTime = 0;
@@ -1652,6 +1658,8 @@ void Pipeline::videoLoop() {
     processTimes.reserve(statsWindow);
     uint64_t lastCaptureWait = 0;
     uint64_t lastFramesSentForFps = 0;
+    uint64_t lastBytesSentForBitrate = 0;
+    double currentOutBitrateBps = 0.0;
     constexpr int64_t kOverlayFreshMs = 160;
 
     while (running_) {
@@ -1741,12 +1749,20 @@ void Pipeline::videoLoop() {
             const std::string payload = buildTelemetryPayload(
                 config_,
                 telemetry,
+                currentFps_.load(),
+                currentOutBitrateBps,
                 wallClockMs(),
                 personSnapshot,
                 eventSnapshot
             );
             injectTelemetrySei(packet.data, payload);
             lastSeiTime = now;
+            if (now - lastSeiLogTime >= std::chrono::seconds(5)) {
+                std::cout << "[SEI Inject] out_fps=" << std::fixed << std::setprecision(2) << currentFps_.load()
+                          << " out_kbps=" << std::fixed << std::setprecision(1) << (currentOutBitrateBps / 1000.0)
+                          << std::endl;
+                lastSeiLogTime = now;
+            }
         }
 
         if (recorder_ && recorder_->isEnabled()) {
@@ -1815,6 +1831,10 @@ void Pipeline::videoLoop() {
             const uint64_t sentDelta = sentNow >= lastFramesSentForFps ? (sentNow - lastFramesSentForFps) : 0;
             currentFps_ = static_cast<double>(sentDelta) * 1000.0 / elapsed.count();
             lastFramesSentForFps = sentNow;
+            const uint64_t bytesNow = bytesSent_.load();
+            const uint64_t bytesDelta = bytesNow >= lastBytesSentForBitrate ? (bytesNow - lastBytesSentForBitrate) : 0;
+            currentOutBitrateBps = static_cast<double>(bytesDelta) * 8.0 * 1000.0 / elapsed.count();
+            lastBytesSentForBitrate = bytesNow;
             lastFpsTime = now;
         }
 

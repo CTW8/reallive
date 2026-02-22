@@ -29,6 +29,20 @@ class NativePlayer : Player {
         nativePlayHistory(h, url, startMs)
     }
 
+    override fun pause() {
+        val h = handle
+        if (h == 0L) return
+        Log.i(tag, "pause handle=$h")
+        nativePause(h)
+    }
+
+    override fun resume() {
+        val h = handle
+        if (h == 0L) return
+        Log.i(tag, "resume handle=$h")
+        nativeResume(h)
+    }
+
     override fun seek(tsMs: Long) {
         val h = handle
         if (h == 0L) return
@@ -51,13 +65,15 @@ class NativePlayer : Player {
         val decodeFps = values.getOrNull(2) ?: 0.0
         val renderFps = values.getOrNull(3) ?: 0.0
         val bufferedFrames = values.getOrNull(4)?.toLong() ?: 0L
-        val stateCode = values.getOrNull(5)?.toInt() ?: 0
+        val currentPositionMs = values.getOrNull(5)?.toLong() ?: -1L
+        val stateCode = values.getOrNull(6)?.toInt() ?: 0
         return PlayerStats(
             videoWidth = width,
             videoHeight = height,
             decodeFps = decodeFps,
             renderFps = renderFps,
             bufferedFrames = bufferedFrames,
+            currentPositionMs = currentPositionMs,
             state = PlayerState.fromCode(stateCode),
         )
     }
@@ -74,6 +90,8 @@ class NativePlayer : Player {
     private external fun nativeSetSurface(handle: Long, surface: Surface?)
     private external fun nativePlayLive(handle: Long, url: String)
     private external fun nativePlayHistory(handle: Long, url: String, startMs: Long)
+    private external fun nativePause(handle: Long)
+    private external fun nativeResume(handle: Long)
     private external fun nativeSeek(handle: Long, tsMs: Long)
     private external fun nativeStop(handle: Long)
     private external fun nativeGetStats(handle: Long): DoubleArray

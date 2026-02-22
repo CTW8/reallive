@@ -26,7 +26,7 @@ const Camera = {
   },
 
   update(id, userId, fields) {
-    const allowed = ['name', 'resolution', 'status'];
+    const allowed = ['name', 'resolution', 'status', 'location'];
     const updates = [];
     const values = [];
     for (const key of allowed) {

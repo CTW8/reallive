@@ -67,30 +67,34 @@
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="@color/auth_on_surface_variant" />
 
-        <com.google.android.material.button.MaterialButton
+        <TextView
             android:id="@+id/splash_btn_start"
             android:layout_width="match_parent"
             android:layout_height="40dp"
             android:layout_marginTop="@dimen/space_32"
-            android:backgroundTint="@color/auth_primary"
+            android:background="@drawable/bg_btn_primary"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
             android:text="@string/splash_btn_start"
+            android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
             android:textColor="@color/auth_on_primary"
-            android:textAllCaps="false"
-            app:icon="@drawable/ic_rl_rocket_24"
-            app:iconGravity="textStart"
-            app:iconPadding="8dp"
-            app:iconTint="@color/auth_on_primary" />
+            android:drawableStart="@drawable/ic_rl_rocket_24"
+            android:drawableTint="@color/auth_on_primary"
+            android:drawablePadding="8dp" />
 
-        <com.google.android.material.button.MaterialButton
+        <TextView
             android:id="@+id/splash_btn_login"
-            style="?attr/materialButtonOutlinedStyle"
             android:layout_width="match_parent"
             android:layout_height="40dp"
             android:layout_marginTop="@dimen/space_12"
-            android:strokeColor="@color/auth_outline_light"
-            android:textColor="@color/white"
+            android:background="@drawable/bg_btn_outline_light"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
             android:text="@string/splash_btn_login"
-            android:textAllCaps="false" />
+            android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+            android:textColor="@color/white" />
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

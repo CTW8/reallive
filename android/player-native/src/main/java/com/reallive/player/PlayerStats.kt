@@ -21,5 +21,6 @@ data class PlayerStats(
     val decodeFps: Double = 0.0,
     val renderFps: Double = 0.0,
     val bufferedFrames: Long = 0L,
+    val currentPositionMs: Long = -1L,
     val state: PlayerState = PlayerState.IDLE,
 )

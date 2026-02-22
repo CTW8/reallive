@@ -1,158 +1,158 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/auth_bg"
+    android:background="#0F0E18"
     android:orientation="vertical">
 
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="#0F0E18">
-
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/add_camera_toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@android:color/transparent"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp"
-            app:navigationIcon="@drawable/ic_rl_close_24"
-            app:navigationIconTint="@color/white"
-            app:title="@string/add_camera_title"
-            app:titleTextColor="@color/white" />
+        android:layout_weight="1">
 
         <LinearLayout
             android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/add_camera_close"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Close"
+                android:padding="10dp"
+                android:src="@drawable/ic_rl_close_24"
+                android:tint="@color/white" />
+
+            <TextView
+                android:id="@+id/add_camera_page_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="Add Camera"
+                android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                android:textColor="@color/white" />
+
+            <ImageButton
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Flash"
+                android:padding="10dp"
+                android:src="@drawable/ic_rl_flash_off_24"
+                android:tint="@color/white" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:orientation="vertical">
+            android:layout_marginTop="72dp"
+            android:layout_marginBottom="160dp"
+            android:layout_marginStart="20dp"
+            android:layout_marginEnd="20dp"
+            android:background="#151020">
 
             <FrameLayout
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:layout_marginStart="20dp"
-                android:layout_marginTop="72dp"
-                android:layout_marginEnd="20dp"
-                android:layout_marginBottom="14dp"
-                android:background="#151020">
+                android:layout_width="220dp"
+                android:layout_height="220dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_scan_frame">
 
                 <View
-                    android:layout_width="220dp"
-                    android:layout_height="220dp"
-                    android:layout_gravity="center"
-                    android:background="@android:color/transparent" />
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_gravity="top|start"
+                    android:background="@drawable/bg_scan_corner_tl" />
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="bottom"
-                    android:gravity="center"
-                    android:paddingBottom="14dp"
-                    android:text="Align QR code from camera within the frame"
-                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                    android:textColor="@color/white" />
+                <View
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_gravity="top|end"
+                    android:background="@drawable/bg_scan_corner_tr" />
+
+                <View
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_gravity="bottom|start"
+                    android:background="@drawable/bg_scan_corner_bl" />
+
+                <View
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_gravity="bottom|end"
+                    android:background="@drawable/bg_scan_corner_br" />
             </FrameLayout>
 
-            <LinearLayout
+            <View
+                android:layout_width="220dp"
+                android:layout_height="2dp"
+                android:layout_gravity="center"
+                android:background="#66C8BFFF" />
+
+            <TextView
+                android:id="@+id/add_camera_scan_hint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="?attr/colorSurface"
-                android:orientation="vertical"
-                android:padding="14dp">
+                android:layout_gravity="bottom"
+                android:gravity="center"
+                android:paddingBottom="14dp"
+                android:text="Align QR code from camera within the frame"
+                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                android:textColor="@color/white" />
+        </FrameLayout>
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Scan the QR code on your camera device or its packaging"
-                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="@drawable/bg_sheet_top"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingTop="12dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="16dp">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/add_camera_scan_btn"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp"
-                    android:layout_marginTop="10dp"
-                    android:text="Enter code manually"
-                    android:textAllCaps="false" />
+            <TextView
+                android:id="@+id/add_camera_sheet_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Scan the QR code on your camera device or its packaging"
+                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                android:textColor="@color/auth_on_surface_variant" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/add_camera_nearby_btn"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp"
-                    android:layout_marginTop="8dp"
-                    android:text="Search nearby devices"
-                    android:textAllCaps="false" />
+            <TextView
+                android:id="@+id/add_camera_scan_btn"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_btn_tonal"
+                android:gravity="center"
+                android:text="Enter code manually"
+                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+                android:textColor="#E5DFF9"
+                android:drawableStart="@drawable/ic_rl_edit_24"
+                android:drawableTint="#E5DFF9"
+                android:drawablePadding="8dp" />
 
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.Material3.TextInputLayout.FilledBox"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:hint="Camera name"
-                    app:boxBackgroundColor="?attr/colorSurfaceVariant">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/add_camera_name"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="textCapWords"
-                        android:maxLines="1" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.Material3.TextInputLayout.FilledBox"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:hint="Resolution"
-                    app:boxBackgroundColor="?attr/colorSurfaceVariant">
-
-                    <AutoCompleteTextView
-                        android:id="@+id/add_camera_resolution"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:focusable="false"
-                        android:inputType="none" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.Material3.TextInputLayout.FilledBox"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:hint="Scan Key (optional)"
-                    app:boxBackgroundColor="?attr/colorSurfaceVariant">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/add_camera_scan_key"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="text"
-                        android:maxLines="1" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <TextView
-                    android:id="@+id/add_camera_error"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                    android:textColor="?attr/colorError" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/add_camera_submit"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp"
-                    android:layout_marginTop="10dp"
-                    android:text="Continue"
-                    android:textAllCaps="false" />
-            </LinearLayout>
+            <TextView
+                android:id="@+id/add_camera_nearby_btn"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_btn_outline"
+                android:gravity="center"
+                android:text="Search nearby devices"
+                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+                android:textColor="@color/auth_primary"
+                android:drawableStart="@drawable/ic_rl_wifi_find_24"
+                android:drawableTint="@color/auth_primary"
+                android:drawablePadding="8dp" />
         </LinearLayout>
     </FrameLayout>
-
 </LinearLayout>

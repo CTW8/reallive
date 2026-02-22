@@ -55,8 +55,10 @@ const statusDotClass = computed(() => {
 })
 
 const topFps = computed(() => {
-  // Prefer device-side SEI camera fps as the primary display value.
-  // SRS fps can be bursty/noisy and may over-report momentarily.
+  // Prefer device-side SEI real output fps.
+  const seiFps = Number(streamInfo.value?.sei?.telemetry?.streamOutFps)
+  if (Number.isFinite(seiFps) && seiFps > 0) return seiFps.toFixed(1)
+  // Fallback: configured camera fps, then SRS estimated fps.
   const camFps = Number(streamInfo.value?.sei?.cameraConfig?.fps)
   if (Number.isFinite(camFps) && camFps > 0) return camFps.toFixed(1)
   const srsFps = Number(streamInfo.value?.srs?.fps)
@@ -68,6 +70,10 @@ const topFps = computed(() => {
 })
 
 const topBitrate = computed(() => {
+  const seiKbps = Number(streamInfo.value?.sei?.telemetry?.streamOutBitrateKbps)
+  if (Number.isFinite(seiKbps) && seiKbps > 0) return `${(seiKbps / 1000).toFixed(1)} Mbps`
+  const seiBps = Number(streamInfo.value?.sei?.telemetry?.streamOutBitrateBps)
+  if (Number.isFinite(seiBps) && seiBps > 0) return `${(seiBps / 1000000).toFixed(1)} Mbps`
   const recv30s = Number(streamInfo.value?.srs?.kbps?.recv_30s)
   if (Number.isFinite(recv30s) && recv30s > 0) return `${(recv30s / 1000).toFixed(1)} Mbps`
   return '0.0 Mbps'

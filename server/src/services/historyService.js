@@ -159,12 +159,21 @@ function readEventLog(streamDir, out) {
     const rawTs = ensureNumber(parsed.ts, null);
     if (!Number.isFinite(rawTs)) continue;
     const normalizedTs = normalizeTimestampMs(rawTs, null);
-    const type = String(parsed.type || '').toLowerCase();
-    if (type !== 'person') continue;
+    const typeRaw = String(parsed.type || '').toLowerCase();
+    let mappedType = null;
+    if (typeRaw === 'person' || typeRaw === 'person_detected' || typeRaw === 'person-detected') {
+      mappedType = 'person-detected';
+    } else if (typeRaw === 'motion' || typeRaw === 'motion_detected' || typeRaw === 'motion-detected') {
+      mappedType = 'motion-detected';
+    } else if (typeRaw === 'sound' || typeRaw === 'audio' || typeRaw === 'noise' ||
+      typeRaw === 'sound_detected' || typeRaw === 'sound-detected') {
+      mappedType = 'sound-detected';
+    }
+    if (!mappedType) continue;
     const bbox = parsed.bbox && typeof parsed.bbox === 'object' ? parsed.bbox : {};
     const event = {
       ts: Number.isFinite(normalizedTs) ? normalizedTs : Math.floor(rawTs),
-      type: 'person-detected',
+      type: mappedType,
       score: ensureNumber(parsed.score, 0),
       bbox: {
         x: Math.max(0, Math.floor(ensureNumber(bbox.x, 0))),

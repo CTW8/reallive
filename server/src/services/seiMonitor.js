@@ -3,8 +3,10 @@ const RECONNECT_DELAY_MS = 1500;
 const TELEMETRY_HISTORY_LIMIT = 120;
 const PERSON_EVENTS_LIMIT = 200;
 const SEI_CACHE_STALE_MS = Math.max(1000, Number(process.env.SEI_CACHE_STALE_MS || 300000));
+const SEI_MONITOR_BUILD_TAG = 'sei-monitor-v5';
 const EPOCH_MS_MIN = 946684800000;   // 2000-01-01
 const EPOCH_MS_MAX = 4102444800000;  // 2100-01-01
+const SEI_DEBUG_BUILD_TAG = 'sei-debug-v6';
 
 const TELEMETRY_SEI_UUID = Buffer.from([
   0x52, 0x65, 0x61, 0x4c, 0x69, 0x76, 0x65, 0x53,
@@ -27,6 +29,22 @@ function normalizeStreamKey(value) {
 }
 
 function toFiniteNumber(value, fallback = null) {
+  if (typeof value === 'string') {
+    const raw = value.trim().toLowerCase();
+    if (!raw) return fallback;
+    const m = raw.match(/[-+]?\d+(\.\d+)?/);
+    if (m) {
+      const parsed = Number(m[0]);
+      if (Number.isFinite(parsed)) {
+        // Unit-aware coercion for bitrate strings.
+        if (raw.includes('mbps')) return parsed * 1000;
+        if (raw.includes('kbps')) return parsed;
+        if (raw.includes('bps')) return parsed / 1000;
+        return parsed;
+      }
+    }
+    return fallback;
+  }
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
@@ -39,10 +57,57 @@ function clampPercent(value) {
 }
 
 function normalizeTelemetry(device = {}) {
+  const firstFinite = (...values) => {
+    for (const value of values) {
+      const n = toFiniteNumber(value, null);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
+  };
+
   const cpuCorePctRaw = Array.isArray(device.cpu_core_pct) ? device.cpu_core_pct : [];
   const cpuCorePct = cpuCorePctRaw
     .map((value) => clampPercent(value))
     .filter((value) => Number.isFinite(value));
+  const streamOutFps = firstFinite(
+    device.stream_out_fps,
+    device.streamOutFps,
+    device.out_fps,
+    device.outFps,
+    device.stream_fps,
+    device.streamFps,
+    device.video_fps,
+    device.videoFps,
+    device.fps,
+  );
+  const streamOutBitrateBps = firstFinite(
+    device.stream_out_bitrate_bps,
+    device.streamOutBitrateBps,
+    device.out_bitrate_bps,
+    device.outBitrateBps,
+    device.stream_bitrate_bps,
+    device.streamBitrateBps,
+    device.video_bitrate_bps,
+    device.videoBitrateBps,
+    device.bitrate_bps,
+    device.bitrateBps,
+  );
+  const streamOutBitrateKbpsRaw = firstFinite(
+    device.stream_out_bitrate_kbps,
+    device.streamOutBitrateKbps,
+    device.out_bitrate_kbps,
+    device.outBitrateKbps,
+    device.stream_bitrate_kbps,
+    device.streamBitrateKbps,
+    device.video_bitrate_kbps,
+    device.videoBitrateKbps,
+    device.bitrate_kbps,
+    device.bitrateKbps,
+    device.kbps,
+  );
+  const streamOutBitrateKbps = Number.isFinite(streamOutBitrateKbpsRaw)
+    ? streamOutBitrateKbpsRaw
+    : (Number.isFinite(streamOutBitrateBps) ? (streamOutBitrateBps / 1000) : null);
 
   return {
     cpuPct: clampPercent(device.cpu_pct),
@@ -53,7 +118,145 @@ function normalizeTelemetry(device = {}) {
     memoryTotalMb: Math.round((toFiniteNumber(device.mem_total_mb, 0) || 0) * 10) / 10,
     storageUsedGb: Math.round((toFiniteNumber(device.storage_used_gb, 0) || 0) * 100) / 100,
     storageTotalGb: Math.round((toFiniteNumber(device.storage_total_gb, 0) || 0) * 100) / 100,
+    streamOutFps: Number.isFinite(streamOutFps) ? Math.round(streamOutFps * 100) / 100 : null,
+    streamOutBitrateBps: Number.isFinite(streamOutBitrateBps) ? Math.max(0, Math.round(streamOutBitrateBps)) : null,
+    streamOutBitrateKbps: Number.isFinite(streamOutBitrateKbps)
+      ? Math.round(streamOutBitrateKbps * 10) / 10
+      : null,
   };
+}
+
+function findNumericMetricDeep(root = {}, keys = [], maxDepth = 5) {
+  if (!root || typeof root !== 'object') return null;
+  const targets = new Set(keys.map((k) => String(k).toLowerCase()));
+  const queue = [{ value: root, depth: 0 }];
+  while (queue.length) {
+    const node = queue.shift();
+    if (!node || !node.value || typeof node.value !== 'object') continue;
+    if (node.depth > maxDepth) continue;
+    for (const [k, v] of Object.entries(node.value)) {
+      const key = String(k).toLowerCase();
+      if (targets.has(key)) {
+        const n = toFiniteNumber(v, null);
+        if (Number.isFinite(n)) return n;
+      }
+      if (v && typeof v === 'object') {
+        queue.push({ value: v, depth: node.depth + 1 });
+      }
+    }
+  }
+  return null;
+}
+
+function enrichTelemetryFromPayload(payload = {}, telemetry = {}) {
+  const enriched = { ...telemetry };
+  if (!Number.isFinite(enriched.streamOutFps) || enriched.streamOutFps <= 0) {
+    const fps = findNumericMetricDeep(payload, [
+      'stream_out_fps', 'streamoutfps', 'out_fps', 'outfps',
+      'stream_fps', 'streamfps', 'video_fps', 'videofps', 'fps',
+    ]);
+    if (Number.isFinite(fps) && fps > 0) {
+      enriched.streamOutFps = Math.round(fps * 100) / 100;
+    }
+  }
+
+  if (
+    (!Number.isFinite(enriched.streamOutBitrateKbps) || enriched.streamOutBitrateKbps <= 0) &&
+    (!Number.isFinite(enriched.streamOutBitrateBps) || enriched.streamOutBitrateBps <= 0)
+  ) {
+    const kbps = findNumericMetricDeep(payload, [
+      'stream_out_bitrate_kbps', 'streamoutbitratekbps', 'out_bitrate_kbps', 'outbitratekbps',
+      'stream_bitrate_kbps', 'streambitratekbps', 'video_bitrate_kbps', 'videobitratekbps',
+      'bitrate_kbps', 'bitratekbps', 'kbps',
+    ]);
+    const bps = findNumericMetricDeep(payload, [
+      'stream_out_bitrate_bps', 'streamoutbitratebps', 'out_bitrate_bps', 'outbitratebps',
+      'stream_bitrate_bps', 'streambitratebps', 'video_bitrate_bps', 'videobitratebps',
+      'bitrate_bps', 'bitratebps', 'bps',
+    ]);
+    const genericBitrate = findNumericMetricDeep(payload, [
+      'stream_out_bitrate', 'streamoutbitrate', 'out_bitrate', 'outbitrate',
+      'stream_bitrate', 'streambitrate', 'video_bitrate', 'videobitrate',
+      'bitrate',
+    ]);
+    if (Number.isFinite(kbps) && kbps > 0) {
+      enriched.streamOutBitrateKbps = Math.round(kbps * 10) / 10;
+      enriched.streamOutBitrateBps = Math.round(kbps * 1000);
+    } else if (Number.isFinite(bps) && bps > 0) {
+      enriched.streamOutBitrateBps = Math.round(bps);
+      enriched.streamOutBitrateKbps = Math.round((bps / 1000) * 10) / 10;
+    } else if (Number.isFinite(genericBitrate) && genericBitrate > 0) {
+      // Heuristic: large values are usually bps, smaller ones are kbps.
+      if (genericBitrate >= 200000) {
+        enriched.streamOutBitrateBps = Math.round(genericBitrate);
+        enriched.streamOutBitrateKbps = Math.round((genericBitrate / 1000) * 10) / 10;
+      } else {
+        enriched.streamOutBitrateKbps = Math.round(genericBitrate * 10) / 10;
+        enriched.streamOutBitrateBps = Math.round(genericBitrate * 1000);
+      }
+    }
+  }
+
+  // Last fallback for legacy payloads: camera configured values.
+  if (!Number.isFinite(enriched.streamOutFps) || enriched.streamOutFps <= 0) {
+    const cfgFps = findNumericMetricDeep(payload, ['camera_fps', 'camerafps', 'fps']);
+    if (Number.isFinite(cfgFps) && cfgFps > 0) {
+      enriched.streamOutFps = Math.round(cfgFps * 100) / 100;
+    }
+  }
+  if (
+    (!Number.isFinite(enriched.streamOutBitrateKbps) || enriched.streamOutBitrateKbps <= 0) &&
+    (!Number.isFinite(enriched.streamOutBitrateBps) || enriched.streamOutBitrateBps <= 0)
+  ) {
+    const cfgBitrate = findNumericMetricDeep(payload, [
+      'camera_bitrate', 'camerabitrate', 'bitrate',
+    ]);
+    if (Number.isFinite(cfgBitrate) && cfgBitrate > 0) {
+      if (cfgBitrate >= 200000) {
+        enriched.streamOutBitrateBps = Math.round(cfgBitrate);
+        enriched.streamOutBitrateKbps = Math.round((cfgBitrate / 1000) * 10) / 10;
+      } else {
+        enriched.streamOutBitrateKbps = Math.round(cfgBitrate * 10) / 10;
+        enriched.streamOutBitrateBps = Math.round(cfgBitrate * 1000);
+      }
+    }
+  }
+  return enriched;
+}
+
+function hasOwn(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function hasAnyTelemetryField(obj = {}) {
+  if (!obj || typeof obj !== 'object') return false;
+  const keys = [
+    'cpu_pct', 'mem_pct', 'storage_pct',
+    'stream_out_fps', 'streamOutFps', 'out_fps', 'outFps', 'stream_fps', 'streamFps', 'video_fps', 'videoFps', 'fps',
+    'stream_out_bitrate_bps', 'streamOutBitrateBps', 'out_bitrate_bps', 'outBitrateBps', 'stream_bitrate_bps', 'streamBitrateBps', 'video_bitrate_bps', 'videoBitrateBps', 'bitrate_bps', 'bitrateBps',
+    'stream_out_bitrate_kbps', 'streamOutBitrateKbps', 'out_bitrate_kbps', 'outBitrateKbps', 'stream_bitrate_kbps', 'streamBitrateKbps', 'video_bitrate_kbps', 'videoBitrateKbps', 'bitrate_kbps', 'bitrateKbps', 'kbps',
+  ];
+  return keys.some((k) => hasOwn(obj, k));
+}
+
+function findTelemetryObject(payload = {}) {
+  if (!payload || typeof payload !== 'object') return null;
+  const candidates = [
+    payload.device,
+    payload.telemetry,
+    payload.stats && payload.stats.device,
+    payload.stats && payload.stats.telemetry,
+    payload.stats,
+    payload.stream,
+    payload.video,
+    payload,
+  ];
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && hasAnyTelemetryField(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 function clamp01(value) {
@@ -331,6 +534,7 @@ function updateSeiCache(streamKey, payload) {
     updatedAt: 0,
     telemetry: null,
     telemetryHistory: [],
+    telemetrySamples: 0,
     cameraConfig: null,
     configurable: null,
     person: null,
@@ -344,12 +548,21 @@ function updateSeiCache(streamKey, payload) {
       )
     );
   }
+  if (!Number.isFinite(item.telemetrySamples)) {
+    item.telemetrySamples = 0;
+  }
 
   const payloadTs = normalizeTimestampMs(payload?.ts, now);
+  if (!item.debugTagLogged) {
+    console.log(`[SEI Monitor] debug tag=${SEI_DEBUG_BUILD_TAG} stream=${cacheKey}`);
+    item.debugTagLogged = true;
+  }
 
-  if (payload.device && typeof payload.device === 'object') {
-    const telemetry = normalizeTelemetry(payload.device);
+  const telemetryObj = findTelemetryObject(payload);
+  if (telemetryObj) {
+    const telemetry = enrichTelemetryFromPayload(payload, normalizeTelemetry(telemetryObj));
     item.telemetry = telemetry;
+    item.telemetrySamples += 1;
     item.telemetryHistory.push({
       ts: payloadTs,
       cpuPct: telemetry.cpuPct,
@@ -358,12 +571,49 @@ function updateSeiCache(streamKey, payload) {
       storagePct: telemetry.storagePct,
       storageUsedGb: telemetry.storageUsedGb,
       storageTotalGb: telemetry.storageTotalGb,
+      streamOutFps: telemetry.streamOutFps,
+      streamOutBitrateBps: telemetry.streamOutBitrateBps,
+      streamOutBitrateKbps: telemetry.streamOutBitrateKbps,
     });
     if (item.telemetryHistory.length > TELEMETRY_HISTORY_LIMIT) {
       item.telemetryHistory.splice(0, item.telemetryHistory.length - TELEMETRY_HISTORY_LIMIT);
     }
     if (item.telemetryHistory.length === 1) {
       console.log(`[SEI Monitor] stream=${cacheKey} telemetry online`);
+    }
+    if (item.telemetrySamples % 10 === 0) {
+      console.log(
+        `[SEI Monitor] stream=${cacheKey} sample=${item.telemetrySamples} out_fps=${telemetry.streamOutFps ?? 'null'} out_kbps=${telemetry.streamOutBitrateKbps ?? 'null'} out_bps=${telemetry.streamOutBitrateBps ?? 'null'}`
+      );
+    }
+    if (!Number.isFinite(telemetry.streamOutFps) && !Number.isFinite(telemetry.streamOutBitrateKbps) && !Number.isFinite(telemetry.streamOutBitrateBps)) {
+      const sourceKeys = Object.keys(telemetryObj).slice(0, 24).join(',');
+      const topKeys = Object.keys(payload || {}).slice(0, 24).join(',');
+      const cameraKeys = payload?.camera && typeof payload.camera === 'object'
+        ? Object.keys(payload.camera).slice(0, 24).join(',')
+        : '';
+      const deviceKeys = payload?.device && typeof payload.device === 'object'
+        ? Object.keys(payload.device).slice(0, 24).join(',')
+        : '';
+      const streamOutRaw = payload?.device?.stream_out_fps
+        ?? payload?.device?.streamOutFps
+        ?? payload?.telemetry?.stream_out_fps
+        ?? payload?.telemetry?.streamOutFps
+        ?? null;
+      const bitrateRaw = payload?.device?.stream_out_bitrate_kbps
+        ?? payload?.device?.streamOutBitrateKbps
+        ?? payload?.device?.stream_out_bitrate_bps
+        ?? payload?.device?.streamOutBitrateBps
+        ?? payload?.telemetry?.stream_out_bitrate_kbps
+        ?? payload?.telemetry?.streamOutBitrateKbps
+        ?? payload?.telemetry?.stream_out_bitrate_bps
+        ?? payload?.telemetry?.streamOutBitrateBps
+        ?? null;
+      console.log(
+        `[SEI Monitor] stream=${cacheKey} telemetry missing out-fps/bitrate ` +
+        `keys=[${sourceKeys}] top=[${topKeys}] device=[${deviceKeys}] camera=[${cameraKeys}] ` +
+        `rawFps=${streamOutRaw ?? 'null'} rawBitrate=${bitrateRaw ?? 'null'}`
+      );
     }
   }
 
@@ -464,6 +714,7 @@ function startSeiMonitor(streamKey, app = 'live') {
 
   const state = { running: true, abortController: null, app };
   monitors.set(streamKey, state);
+  console.log(`[SEI Monitor] start stream=${streamKey} app=${app} tag=${SEI_MONITOR_BUILD_TAG}`);
   runMonitorLoop(streamKey, state);
 }
 

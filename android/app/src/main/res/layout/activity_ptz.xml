@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#0F0E18">
@@ -9,121 +8,205 @@
         android:layout_width="72dp"
         android:layout_height="72dp"
         android:layout_gravity="center"
-        android:src="@drawable/ic_videocam_48"
+        android:src="@drawable/ic_rl_door_front_24"
         android:tint="#33FFFFFF" />
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/ptz_toolbar"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@android:color/transparent"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
-        app:navigationIcon="@drawable/ic_arrow_back_24"
-        app:navigationIconTint="@color/white"
-        app:title="@string/ptz_title"
-        app:titleTextColor="@color/white" />
+        android:layout_gravity="top"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-    <TextView
-        android:id="@+id/ptz_status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="72dp"
-        android:background="#99000000"
-        android:paddingStart="8dp"
-        android:paddingTop="4dp"
-        android:paddingEnd="8dp"
-        android:paddingBottom="4dp"
-        android:text="Ready"
-        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-        android:textColor="@color/white" />
+        <ImageButton
+            android:id="@+id/ptz_back"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="Back"
+            android:padding="8dp"
+            android:src="@drawable/ic_arrow_back_24"
+            android:tint="@color/white" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="PTZ Control"
+            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+            android:textColor="@color/white" />
+
+        <ImageButton
+            android:id="@+id/ptz_more"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="More"
+            android:padding="8dp"
+            android:src="@drawable/ic_rl_more_vert_24"
+            android:tint="@color/white" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
+        android:layout_marginBottom="20dp"
         android:orientation="vertical"
         android:padding="16dp">
+
+        <FrameLayout
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:layout_gravity="center_horizontal"
+            android:background="@color/rl_surface_alt">
+
+            <ImageButton
+                android:id="@+id/ptz_up"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="top|center_horizontal"
+                android:background="@android:color/transparent"
+                android:contentDescription="Up"
+                android:padding="8dp"
+                android:src="@drawable/ic_rl_chevron_right_24"
+                android:tint="@color/white"
+                android:rotation="-90" />
+
+            <ImageButton
+                android:id="@+id/ptz_down"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="bottom|center_horizontal"
+                android:background="@android:color/transparent"
+                android:contentDescription="Down"
+                android:padding="8dp"
+                android:src="@drawable/ic_rl_chevron_right_24"
+                android:tint="@color/white"
+                android:rotation="90" />
+
+            <ImageButton
+                android:id="@+id/ptz_left"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center_vertical|start"
+                android:background="@android:color/transparent"
+                android:contentDescription="Left"
+                android:padding="8dp"
+                android:src="@drawable/ic_rl_chevron_right_24"
+                android:tint="@color/white"
+                android:rotation="180" />
+
+            <ImageButton
+                android:id="@+id/ptz_right"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center_vertical|end"
+                android:background="@android:color/transparent"
+                android:contentDescription="Right"
+                android:padding="8dp"
+                android:src="@drawable/ic_rl_chevron_right_24"
+                android:tint="@color/white" />
+
+            <View
+                android:id="@+id/ptz_stop"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_gravity="center"
+                android:background="@color/white" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center"
-            android:orientation="vertical">
+            android:layout_marginTop="18dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/ptz_up"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="64dp"
-                android:layout_height="40dp"
-                android:text="↑"
-                android:textAllCaps="false"
-                app:strokeColor="@color/auth_outline_light" />
+            <ImageButton
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Zoom out"
+                android:padding="6dp"
+                android:src="@drawable/ic_rl_remove_24"
+                android:tint="@color/white" />
 
-            <LinearLayout
-                android:layout_width="wrap_content"
+            <SeekBar
+                android:id="@+id/ptz_speed_seek"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:orientation="horizontal">
+                android:layout_weight="1"
+                android:max="9"
+                android:progress="3" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/ptz_left"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="64dp"
-                    android:layout_height="40dp"
-                    android:text="←"
-                    android:textAllCaps="false"
-                    app:strokeColor="@color/auth_outline_light" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/ptz_stop"
-                    android:layout_width="64dp"
-                    android:layout_height="40dp"
-                    android:layout_marginStart="6dp"
-                    android:layout_marginEnd="6dp"
-                    android:backgroundTint="@color/auth_primary"
-                    android:text="●"
-                    android:textAllCaps="false"
-                    android:textColor="@color/auth_on_primary" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/ptz_right"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="64dp"
-                    android:layout_height="40dp"
-                    android:text="→"
-                    android:textAllCaps="false"
-                    app:strokeColor="@color/auth_outline_light" />
-            </LinearLayout>
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/ptz_down"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="64dp"
-                android:layout_height="40dp"
-                android:layout_marginTop="6dp"
-                android:text="↓"
-                android:textAllCaps="false"
-                app:strokeColor="@color/auth_outline_light" />
+            <ImageButton
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Zoom in"
+                android:padding="6dp"
+                android:src="@drawable/ic_rl_add_24"
+                android:tint="@color/white" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/ptz_speed"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="Speed: 4"
-            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-            android:textColor="@color/white" />
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:orientation="horizontal">
 
-        <SeekBar
-            android:id="@+id/ptz_speed_seek"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="9"
-            android:progress="3" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:background="@color/rl_surface_alt"
+                android:gravity="center"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="Home"
+                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:textColor="@color/white" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="8dp"
+                android:background="@color/rl_surface"
+                android:gravity="center"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="Door"
+                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:textColor="@color/auth_on_surface_variant" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="8dp"
+                android:background="@color/rl_surface"
+                android:gravity="center"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="Road"
+                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:textColor="@color/auth_on_surface_variant" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="8dp"
+                android:background="@color/rl_surface"
+                android:gravity="center"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="Garden"
+                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:textColor="@color/auth_on_surface_variant" />
+        </LinearLayout>
     </LinearLayout>
-
 </FrameLayout>

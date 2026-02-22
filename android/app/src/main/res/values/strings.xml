@@ -32,6 +32,8 @@
     <string name="forgot_password_mismatch">Password confirmation mismatch.</string>
     <string name="forgot_reset_success">Password reset success (mock).</string>
     <string name="forgot_reset_toast">Password reset completed</string>
+    <string name="forgot_sent_error">Failed to request password reset.</string>
+    <string name="forgot_reset_not_supported">Password reset update is not available in this build.</string>
     <string name="error_email_required">Email is required.</string>
     <string name="register_password_min_error">Password must be at least 8 characters.</string>
     <string name="dashboard_title">Control Center</string>
@@ -88,6 +90,12 @@
     <string name="search_filter_all">All</string>
     <string name="search_filter_cameras">Cameras</string>
     <string name="search_filter_sessions">Sessions</string>
+    <string name="search_empty_title">No results found</string>
+    <string name="search_empty_desc">Try another keyword, remove filters, or check camera names.</string>
+    <string name="search_suggest_front">Front Door</string>
+    <string name="search_suggest_garage">Garage</string>
+    <string name="search_suggest_person">Person Alert</string>
+    <string name="search_clear_history">Clear Search History</string>
     <string name="notifications_title">Notifications</string>
     <string name="history_title">History</string>
     <string name="history_action_calendar">Calendar</string>

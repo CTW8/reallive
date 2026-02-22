@@ -31,6 +31,7 @@ struct PlayerStats {
     double decodeFps = 0.0;
     double renderFps = 0.0;
     int64_t bufferedFrames = 0;
+    int64_t currentPositionMs = -1;
     PlaybackState state = PlaybackState::Idle;
 };
 

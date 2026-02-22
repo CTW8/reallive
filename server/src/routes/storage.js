@@ -19,6 +19,23 @@ const cloudStorageState = {
   lastSyncMs: 0,
 };
 
+const STORAGE_PLANS = Object.freeze([
+  {
+    id: 'plus-500',
+    name: 'Plus 500 GB',
+    totalGb: 500,
+    priceMonthlyUsd: 9.99,
+    description: 'Up to 32 cameras · 180-day retention · AI event filters',
+  },
+  {
+    id: 'business-1tb',
+    name: 'Business 1 TB',
+    totalGb: 1000,
+    priceMonthlyUsd: 19.99,
+    description: 'Unlimited users · Shared roles · Priority support',
+  },
+]);
+
 function toNum(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -199,6 +216,18 @@ router.get('/cloud-config', (req, res) => {
     usedGb: Math.round(cloudUsed * 100) / 100,
     freeGb: Math.round(cloudFree * 100) / 100,
     usedPercent: Math.round(clamp(cloudUsedPercent, 0, 100) * 10) / 10,
+  });
+});
+
+router.get('/plans', (req, res) => {
+  const currentTotalGb = Math.max(1, toNum(cloudStorageState.totalGb, 0));
+  const currentPlan = STORAGE_PLANS
+    .slice()
+    .sort((a, b) => Math.abs(a.totalGb - currentTotalGb) - Math.abs(b.totalGb - currentTotalGb))[0] || null;
+  res.json({
+    plans: STORAGE_PLANS,
+    currentTotalGb,
+    currentPlanId: currentPlan?.id || null,
   });
 });
 

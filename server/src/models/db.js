@@ -95,6 +95,25 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS camera_settings (
+    camera_id INTEGER PRIMARY KEY,
+    location TEXT DEFAULT '',
+    motion_enabled INTEGER DEFAULT 1,
+    motion_sensitivity TEXT DEFAULT 'High',
+    person_enabled INTEGER DEFAULT 1,
+    sound_enabled INTEGER DEFAULT 0,
+    sound_sensitivity TEXT DEFAULT 'Loud',
+    detection_zones TEXT DEFAULT '2 zones configured',
+    night_vision_enabled INTEGER DEFAULT 1,
+    night_vision_mode TEXT DEFAULT 'Auto',
+    image_flip_mode TEXT DEFAULT 'Normal',
+    watermark_enabled INTEGER DEFAULT 1,
+    firmware_version TEXT DEFAULT 'v2.3.8',
+    firmware_update_available INTEGER DEFAULT 1,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE
+  );
 `);
 
 module.exports = db;

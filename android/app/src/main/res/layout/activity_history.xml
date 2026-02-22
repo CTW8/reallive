@@ -8,113 +8,247 @@
 
     <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="320dp"
-        android:background="#121021">
+        android:layout_height="264dp"
+        android:background="#0C0B14">
+
+        <com.reallive.player.PlayerSurfaceView
+            android:id="@+id/history_player_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_hist_video_grid" />
+
+        <View
+            android:id="@+id/history_night_overlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#2A1A3366"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/history_watermark"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_marginTop="8dp"
+            android:background="#66000000"
+            android:paddingStart="8dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="4dp"
+            android:text="CAM"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+            android:textColor="@color/white"
+            android:visibility="gone" />
 
         <ImageView
+            android:id="@+id/history_placeholder_icon"
             android:layout_width="72dp"
             android:layout_height="72dp"
             android:layout_gravity="center"
-            android:src="@drawable/ic_videocam_48"
+            android:src="@drawable/ic_rl_door_front_24"
             android:tint="#33FFFFFF" />
-
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/history_toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@android:color/transparent"
-            app:navigationIcon="@drawable/ic_arrow_back_24"
-            app:navigationIconTint="@color/white"
-            app:title=""
-            app:titleTextColor="@color/white" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="top"
-            android:layout_marginTop="56dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_hist_top_gradient"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp">
+            android:paddingStart="12dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="12dp">
+
+            <ImageButton
+                android:id="@+id/history_back"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_hist_circle"
+                android:contentDescription="Back"
+                android:padding="6dp"
+                android:src="@drawable/ic_arrow_back_24"
+                android:tint="@color/white" />
 
             <TextView
-                android:id="@+id/history_status"
+                android:id="@+id/history_title"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:gravity="center"
                 android:text="Front Door"
-                android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
                 android:textColor="@color/white" />
 
-            <TextView
+            <FrameLayout
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:background="@color/rl_surface_alt"
-                android:gravity="center"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="1x"
-                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-                android:textColor="@color/white" />
+                android:layout_height="30dp">
+
+                <TextView
+                    android:id="@+id/history_speed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:background="@drawable/bg_hist_speed"
+                    android:gravity="center_vertical"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="28dp"
+                    android:text="1x"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="@color/white" />
+
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:layout_gravity="end|center_vertical"
+                    android:layout_marginEnd="8dp"
+                    android:src="@drawable/ic_rl_expand_more_24"
+                    android:tint="@color/white" />
+            </FrameLayout>
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
-            android:background="#88000000"
+            android:background="@drawable/bg_hist_bottom_gradient"
             android:gravity="center_vertical"
-            android:orientation="horizontal"
+            android:orientation="vertical"
             android:paddingStart="12dp"
             android:paddingTop="8dp"
             android:paddingEnd="12dp"
             android:paddingBottom="8dp">
 
-            <ImageButton
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Back 10s"
-                android:padding="6dp"
-                android:src="@drawable/ic_rl_rewind_24"
-                android:tint="@color/white" />
+            <LinearLayout
+                android:id="@+id/history_player_time_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
 
-            <ImageButton
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="6dp"
-                android:background="@color/auth_primary"
-                android:contentDescription="Play"
-                android:padding="6dp"
-                android:src="@drawable/ic_rl_play_24"
-                android:tint="@color/auth_on_primary" />
+                <TextView
+                    android:id="@+id/history_player_time_start"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="start"
+                    android:text="08:23:15"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="#B3FFFFFF" />
 
-            <ImageButton
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginStart="6dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Forward 10s"
-                android:padding="6dp"
-                android:src="@drawable/ic_rl_fast_forward_24"
-                android:tint="@color/white" />
+                <TextView
+                    android:id="@+id/history_player_time_end"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:text="23:59:59"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="#B3FFFFFF" />
+            </LinearLayout>
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:id="@+id/history_player_progress_area"
+                android:layout_width="match_parent"
+                android:layout_height="4dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_hist_pb_bar">
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/pb_g35"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.35" />
+
+                <View
+                    android:id="@+id/history_player_progress_fill"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_hist_pb_fill"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toStartOf="@id/pb_g35"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent" />
+
+                <View
+                    android:id="@+id/history_player_progress_thumb"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginTop="-4dp"
+                    android:background="@drawable/bg_hist_pb_thumb"
+                    app:layout_constraintStart_toStartOf="@id/pb_g35"
+                    app:layout_constraintTop_toTopOf="parent" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
             <SeekBar
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:layout_weight="1"
-                android:max="100"
-                android:progress="32" />
+                android:id="@+id/history_player_seek"
+                android:layout_width="match_parent"
+                android:layout_height="22dp"
+                android:layout_marginTop="6dp"
+                android:max="1000"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
+                android:progress="0" />
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="08:23"
-                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-                android:textColor="@color/white" />
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/history_btn_skip_prev"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="Skip prev"
+                    android:src="@drawable/ic_rl_skip_previous_24"
+                    android:tint="@color/white" />
+
+                <ImageButton
+                    android:id="@+id/history_btn_rewind"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="Rewind"
+                    android:src="@drawable/ic_rl_rewind_24"
+                    android:tint="@color/white" />
+
+                <ImageButton
+                    android:id="@+id/history_btn_play_pause"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="12dp"
+                    android:layout_marginEnd="12dp"
+                    android:background="@drawable/bg_hist_play"
+                    android:contentDescription="Pause"
+                    android:src="@drawable/ic_rl_pause_24"
+                    android:tint="@color/white" />
+
+                <ImageButton
+                    android:id="@+id/history_btn_fast_forward"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="Forward"
+                    android:src="@drawable/ic_rl_fast_forward_24"
+                    android:tint="@color/white" />
+
+                <ImageButton
+                    android:id="@+id/history_btn_skip_next"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="Skip next"
+                    android:src="@drawable/ic_rl_skip_next_24"
+                    android:tint="@color/white" />
+            </LinearLayout>
         </LinearLayout>
     </FrameLayout>
 
@@ -122,25 +256,577 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:translationY="-14dp"
+        android:background="@drawable/bg_hist_content"
         android:orientation="vertical"
-        android:paddingStart="14dp"
+        android:paddingStart="20dp"
         android:paddingTop="8dp"
-        android:paddingEnd="14dp"
+        android:paddingEnd="20dp"
         android:paddingBottom="8dp">
 
-        <TextView
-            android:id="@+id/history_empty"
+        <View
+            android:layout_width="42dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:background="@drawable/bg_live_handle" />
+
+        <LinearLayout
+            android:id="@+id/history_calendar"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="10dp"
+            android:background="#24242B"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <ImageButton
+                android:id="@+id/history_calendar_prev"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:background="@drawable/bg_date_nav"
+                android:contentDescription="Prev"
+                android:src="@drawable/ic_rl_chevron_right_24"
+                android:rotation="180"
+                android:tint="?attr/colorOnSurfaceVariant" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/history_date_icon"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:layout_marginEnd="6dp"
+                    android:src="@drawable/ic_rl_calendar_today_24"
+                    android:tint="#F2F2F6" />
+
+                <TextView
+                    android:id="@+id/history_date_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Feb 15, 2026"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+                    android:textStyle="bold"
+                    android:textColor="#F2F2F6" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/history_calendar_next"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:background="@drawable/bg_date_nav"
+                android:contentDescription="Next"
+                android:src="@drawable/ic_rl_chevron_right_24"
+                android:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="24h Timeline · Tap calendar to switch date"
-            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:layout_marginTop="8dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/history_timeline_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="24h Timeline"
+                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone" />
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:id="@+id/history_timeline_static"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_hist_timeline_bar">
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g0"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.0" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g1"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.08" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g2"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.10" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g3"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.13" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g4"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.25" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g5"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.28" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g6"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.34" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g7"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.36" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g8"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.38" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g9"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.53" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g10"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.56" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g11"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.60" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g12"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.80" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g13"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.82" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g14"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.85" />
+
+                <androidx.constraintlayout.widget.Guideline
+                    android:id="@+id/tl_g15"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    app:layout_constraintGuide_percent="0.95" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_normal"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g1"
+                    app:layout_constraintStart_toStartOf="@id/tl_g0"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_motion"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g3"
+                    app:layout_constraintStart_toStartOf="@id/tl_g2"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_normal"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g4"
+                    app:layout_constraintStart_toStartOf="@id/tl_g3"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_normal"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g6"
+                    app:layout_constraintStart_toStartOf="@id/tl_g5"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_alert"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g8"
+                    app:layout_constraintStart_toStartOf="@id/tl_g7"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_normal"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g9"
+                    app:layout_constraintStart_toStartOf="@id/tl_g8"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_motion"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g11"
+                    app:layout_constraintStart_toStartOf="@id/tl_g10"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_normal"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g12"
+                    app:layout_constraintStart_toStartOf="@id/tl_g11"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_motion"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g14"
+                    app:layout_constraintStart_toStartOf="@id/tl_g13"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@drawable/bg_hist_segment_normal"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="@id/tl_g15"
+                    app:layout_constraintStart_toStartOf="@id/tl_g14"
+                    app:layout_constraintTop_toTopOf="parent"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp" />
+
+                <FrameLayout
+                    android:layout_width="2dp"
+                    android:layout_height="0dp"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintHorizontal_bias="0.35"
+                    android:background="@color/auth_primary">
+
+                    <View
+                        android:layout_width="10dp"
+                        android:layout_height="10dp"
+                        android:layout_gravity="top|center_horizontal"
+                        android:layout_marginTop="-4dp"
+                        android:background="@drawable/bg_hist_seek_dot" />
+                </FrameLayout>
+            </androidx.constraintlayout.widget.ConstraintLayout>
+
+            <FrameLayout
+                android:id="@+id/history_timeline_dynamic"
+                android:layout_width="match_parent"
+                android:layout_height="88dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_hist_timeline_bar"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp">
+
+                <HorizontalScrollView
+                    android:id="@+id/history_timeline_thumb_scroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="80dp"
+                    android:fillViewport="true"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/history_timeline_content"
+                        android:layout_width="wrap_content"
+                        android:layout_height="80dp"
+                        android:orientation="horizontal">
+
+                        <View
+                            android:id="@+id/history_timeline_left_spacer"
+                            android:layout_width="0dp"
+                            android:layout_height="80dp" />
+
+                        <FrameLayout
+                            android:id="@+id/history_timeline_track_container"
+                            android:layout_width="wrap_content"
+                            android:layout_height="80dp">
+
+                            <FrameLayout
+                                android:id="@+id/history_timeline_ruler_layer"
+                                android:layout_width="match_parent"
+                                android:layout_height="24dp"
+                                android:elevation="1dp" />
+
+                            <View
+                                android:id="@+id/history_timeline_track_lane_bg"
+                                android:layout_width="match_parent"
+                                android:layout_height="38dp"
+                                android:layout_marginTop="24dp"
+                                android:background="#1A1824"
+                                android:elevation="0dp" />
+
+                            <FrameLayout
+                                android:id="@+id/history_timeline_clip_layer"
+                                android:layout_width="match_parent"
+                                android:layout_height="38dp"
+                                android:layout_marginTop="24dp"
+                                android:elevation="2dp" />
+
+                            <FrameLayout
+                                android:id="@+id/history_timeline_event_marker_layer"
+                                android:layout_width="match_parent"
+                                android:layout_height="14dp"
+                                android:layout_marginTop="64dp"
+                                android:elevation="3dp" />
+                        </FrameLayout>
+
+                        <View
+                            android:id="@+id/history_timeline_right_spacer"
+                            android:layout_width="0dp"
+                            android:layout_height="80dp" />
+                    </LinearLayout>
+                </HorizontalScrollView>
+
+                <FrameLayout
+                    android:id="@+id/history_timeline_center_indicator"
+                    android:layout_width="2dp"
+                    android:layout_height="80dp"
+                    android:layout_gravity="center_horizontal"
+                    android:background="@color/auth_primary"
+                    android:elevation="6dp">
+
+                    <View
+                        android:layout_width="10dp"
+                        android:layout_height="10dp"
+                        android:layout_gravity="top|center_horizontal"
+                        android:layout_marginTop="-4dp"
+                        android:background="@drawable/bg_hist_seek_dot" />
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/history_playhead_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|center_horizontal"
+                    android:layout_marginTop="0dp"
+                    android:background="#B3000000"
+                    android:elevation="7dp"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:text="00:00:00"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="@android:color/white" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:id="@+id/history_timeline_secondary_ticks"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/history_timeline_tick_0"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="start"
+                    android:text="00:00"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:id="@+id/history_timeline_tick_1"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="06:00"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:id="@+id/history_timeline_tick_2"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="12:00"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:id="@+id/history_timeline_tick_3"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="18:00"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:id="@+id/history_timeline_tick_4"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:text="24:00"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/history_filter_all"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:background="@drawable/bg_btn_tonal"
+                    android:gravity="center"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:text="All"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="#E5DFF9" />
+
+                <TextView
+                    android:id="@+id/history_filter_motion"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_btn_outline"
+                    android:drawableStart="@drawable/ic_rl_directions_run_24"
+                    android:drawableTint="?attr/colorOnSurfaceVariant"
+                    android:drawablePadding="6dp"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="Motion"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:id="@+id/history_filter_person"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_btn_outline"
+                    android:drawableStart="@drawable/ic_rl_person_24"
+                    android:drawableTint="?attr/colorOnSurfaceVariant"
+                    android:drawablePadding="6dp"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="Person"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:id="@+id/history_filter_alert"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_btn_outline"
+                    android:drawableStart="@drawable/ic_rl_warning_24"
+                    android:drawableTint="?attr/colorOnSurfaceVariant"
+                    android:drawablePadding="6dp"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="Alert"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+            </LinearLayout>
+        </HorizontalScrollView>
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/history_recycler"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="8dp"
             android:layout_weight="1"
             android:clipToPadding="false"
             android:paddingBottom="8dp" />

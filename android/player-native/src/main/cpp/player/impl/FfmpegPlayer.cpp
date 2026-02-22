@@ -58,6 +58,7 @@ struct NativePlayerContext {
     std::thread decodeThread;
     std::atomic<bool> running{false};
     std::atomic<bool> playing{false};
+    std::atomic<bool> paused{false};
     std::atomic<PlaybackState> runtimeState{PlaybackState::Idle};
 
     std::atomic<uint64_t> playSerial{0};
@@ -72,6 +73,7 @@ struct NativePlayerContext {
     std::atomic<uint64_t> queuedFrameCount{0};
     std::atomic<uint64_t> swapCount{0};
     std::atomic<uint64_t> statsQueryCount{0};
+    std::atomic<int64_t> currentPositionMs{-1};
     std::mutex statsMutex;
     std::chrono::steady_clock::time_point statsLastTs{};
     uint64_t statsLastDecoded = 0;
@@ -121,6 +123,10 @@ struct DecoderSession {
     uint64_t scaledFrames = 0;
     uint64_t queuedFrames = 0;
     uint64_t decodedFrames = 0;
+    AVRational videoTimeBase{0, 1};
+    bool historyClockReady = false;
+    int64_t historyFirstPtsUs = 0;
+    std::chrono::steady_clock::time_point historyStartWall{};
 };
 
 constexpr uint64_t kPacketLogInterval = 240;
@@ -791,6 +797,9 @@ bool openDecoder(NativePlayerContext* ctx, DecoderSession& s, const std::string&
     s.scaledFrames = 0;
     s.queuedFrames = 0;
     s.decodedFrames = 0;
+    s.videoTimeBase = stream->time_base;
+    s.historyClockReady = false;
+    s.historyFirstPtsUs = 0;
 
     RL_LOGI("decoder opened: mode=%s serial=%llu url=%s", toString(mode), static_cast<unsigned long long>(serial), url.c_str());
     RL_LOGI(
@@ -812,6 +821,43 @@ bool openDecoder(NativePlayerContext* ctx, DecoderSession& s, const std::string&
     return true;
 }
 
+inline void paceHistoryFrame(DecoderSession& s, AVFrame* frame) {
+    if (s.videoTimeBase.num <= 0 || s.videoTimeBase.den <= 0) return;
+    int64_t pts = frame->best_effort_timestamp;
+    if (pts == AV_NOPTS_VALUE) {
+        pts = frame->pts;
+    }
+    if (pts == AV_NOPTS_VALUE) return;
+
+    const int64_t ptsUs = av_rescale_q(pts, s.videoTimeBase, AVRational{1, 1000000});
+    if (!s.historyClockReady) {
+        s.historyClockReady = true;
+        s.historyFirstPtsUs = ptsUs;
+        s.historyStartWall = std::chrono::steady_clock::now();
+        return;
+    }
+
+    const int64_t targetUs = ptsUs - s.historyFirstPtsUs;
+    if (targetUs <= 0) return;
+    const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - s.historyStartWall
+    ).count();
+    const int64_t waitUs = targetUs - elapsedUs;
+    if (waitUs > 1000) {
+        std::this_thread::sleep_for(std::chrono::microseconds(waitUs));
+    }
+}
+
+int64_t framePtsMs(const DecoderSession& s, AVFrame* frame) {
+    if (!frame || s.videoTimeBase.num <= 0 || s.videoTimeBase.den <= 0) return -1;
+    int64_t pts = frame->best_effort_timestamp;
+    if (pts == AV_NOPTS_VALUE) {
+        pts = frame->pts;
+    }
+    if (pts == AV_NOPTS_VALUE) return -1;
+    return av_rescale_q(pts, s.videoTimeBase, AVRational{1, 1000});
+}
+
 bool seekDecoder(DecoderSession& s, int64_t seekMs) {
     if (!s.fmtCtx || !s.codecCtx || s.videoStreamIndex < 0 || seekMs < 0) return false;
 
@@ -831,6 +877,8 @@ bool seekDecoder(DecoderSession& s, int64_t seekMs) {
         return false;
     }
 
+    s.historyClockReady = false;
+    s.historyFirstPtsUs = 0;
     RL_LOGI("seek ok: %lld ms", static_cast<long long>(seekMs));
     return true;
 }
@@ -952,6 +1000,10 @@ void decodeLoop(NativePlayerContext* ctx) {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
             continue;
         }
+        if (ctx->paused.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            continue;
+        }
 
         uint64_t serial = ctx->playSerial.load();
         PlayMode mode = PlayMode::None;
@@ -987,18 +1039,21 @@ void decodeLoop(NativePlayerContext* ctx) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(300));
                 continue;
             }
+            ctx->currentPositionMs.store(-1, std::memory_order_relaxed);
             int64_t seekMs = ctx->pendingSeekMs.exchange(-1);
             if (seekMs < 0 && mode == PlayMode::History) {
                 seekMs = initialSeekMs;
             }
             if (seekMs >= 0) {
                 seekDecoder(session, seekMs);
+                ctx->currentPositionMs.store(seekMs, std::memory_order_relaxed);
             }
         }
 
         int64_t seekReq = ctx->pendingSeekMs.exchange(-1);
         if (seekReq >= 0) {
             seekDecoder(session, seekReq);
+            ctx->currentPositionMs.store(seekReq, std::memory_order_relaxed);
         }
 
         ctx->interruptRequested.store(false);
@@ -1090,6 +1145,14 @@ void decodeLoop(NativePlayerContext* ctx) {
                     if (!ensureScaler(session, session.frame)) {
                         RL_LOGE("ensureScaler failed");
                         continue;
+                    }
+
+                    if (mode == PlayMode::History) {
+                        paceHistoryFrame(session, session.frame);
+                        const int64_t ptsMs = framePtsMs(session, session.frame);
+                        if (ptsMs >= 0) {
+                            ctx->currentPositionMs.store(ptsMs, std::memory_order_relaxed);
+                        }
                     }
 
                     sws_scale(
@@ -1241,6 +1304,8 @@ bool FfmpegPlayer::play(const PlayerSource& source) {
             ctx_->historyStartMs = 0;
         }
         ctx_->pendingSeekMs.store(-1);
+        ctx_->currentPositionMs.store(-1, std::memory_order_relaxed);
+        ctx_->paused.store(false);
         ctx_->playing.store(true);
         setRuntimeState(ctx_, PlaybackState::Connecting, "play-live");
         ctx_->interruptRequested.store(true);
@@ -1257,6 +1322,8 @@ bool FfmpegPlayer::play(const PlayerSource& source) {
         ctx_->mode = PlayMode::History;
     }
     ctx_->pendingSeekMs.store(source.startMs);
+    ctx_->currentPositionMs.store(source.startMs, std::memory_order_relaxed);
+    ctx_->paused.store(false);
     ctx_->playing.store(true);
     setRuntimeState(ctx_, PlaybackState::Connecting, "play-history");
     ctx_->interruptRequested.store(true);
@@ -1276,7 +1343,22 @@ void FfmpegPlayer::seekTo(int64_t positionMs) {
     if (positionMs < 0) positionMs = 0;
     RL_LOGI("seek request: %lld", static_cast<long long>(positionMs));
     ctx_->pendingSeekMs.store(positionMs);
+    ctx_->currentPositionMs.store(positionMs, std::memory_order_relaxed);
     ctx_->interruptRequested.store(true);
+}
+
+void FfmpegPlayer::pause() {
+    if (!ctx_) return;
+    if (!ctx_->playing.load()) return;
+    RL_LOGI("pause request");
+    ctx_->paused.store(true);
+}
+
+void FfmpegPlayer::resume() {
+    if (!ctx_) return;
+    if (!ctx_->playing.load()) return;
+    RL_LOGI("resume request");
+    ctx_->paused.store(false);
 }
 
 void FfmpegPlayer::stop() {
@@ -1288,8 +1370,10 @@ void FfmpegPlayer::stop() {
         ctx_->historyStartMs = 0;
     }
     ctx_->playing.store(false);
+    ctx_->paused.store(false);
     setRuntimeState(ctx_, PlaybackState::Idle, "stop");
     ctx_->pendingSeekMs.store(-1);
+    ctx_->currentPositionMs.store(-1, std::memory_order_relaxed);
     ctx_->interruptRequested.store(true);
     ctx_->playSerial.fetch_add(1);
     clearFrameCache(ctx_);
@@ -1366,15 +1450,17 @@ PlayerStats FfmpegPlayer::stats() const {
     s.videoWidth = ctx_->frameWidth;
     s.videoHeight = ctx_->frameHeight;
     s.bufferedFrames = ctx_->frameReady ? 1 : 0;
+    s.currentPositionMs = ctx_->currentPositionMs.load(std::memory_order_relaxed);
     const auto query = ctx_->statsQueryCount.fetch_add(1, std::memory_order_relaxed) + 1;
     if (query % 10 == 0) {
         RL_LOGI(
-            "stats snapshot: state=%s size=%dx%d decodeFps=%.2f renderFps=%.2f queued=%llu rendered=%llu swaps=%llu",
+            "stats snapshot: state=%s size=%dx%d decodeFps=%.2f renderFps=%.2f posMs=%lld queued=%llu rendered=%llu swaps=%llu",
             toString(s.state),
             s.videoWidth,
             s.videoHeight,
             s.decodeFps,
             s.renderFps,
+            static_cast<long long>(s.currentPositionMs),
             static_cast<unsigned long long>(ctx_->queuedFrameCount.load(std::memory_order_relaxed)),
             static_cast<unsigned long long>(ctx_->renderedFrameCount.load(std::memory_order_relaxed)),
             static_cast<unsigned long long>(ctx_->swapCount.load(std::memory_order_relaxed))

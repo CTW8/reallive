@@ -2,17 +2,12 @@ package com.reallive.android.ui.camera
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.ArrayAdapter
-import android.widget.AutoCompleteTextView
+import android.view.View
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.textfield.TextInputEditText
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
-import java.util.UUID
+import java.util.Locale
 
 class AddCameraActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -24,39 +19,31 @@ class AddCameraActivity : AppCompatActivity() {
         }
 
         setContentView(R.layout.activity_add_camera)
-        findViewById<MaterialToolbar>(R.id.add_camera_toolbar).setNavigationOnClickListener { finish() }
+        applyLocalizedTexts(isChineseLanguage(appConfig.getAppLanguage()))
+        findViewById<android.view.View>(R.id.add_camera_close).setOnClickListener { finish() }
 
-        val inputName = findViewById<TextInputEditText>(R.id.add_camera_name)
-        val inputResolution = findViewById<AutoCompleteTextView>(R.id.add_camera_resolution)
-        val inputScanKey = findViewById<TextInputEditText>(R.id.add_camera_scan_key)
-        val errorText = findViewById<TextView>(R.id.add_camera_error)
-
-        val options = listOf("720p", "1080p", "1440p", "4K")
-        inputResolution.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, options))
-        inputResolution.setText("1080p", false)
-
-        findViewById<MaterialButton>(R.id.add_camera_scan_btn).setOnClickListener {
-            inputScanKey.setText(UUID.randomUUID().toString().take(12))
-            if (inputName.text.isNullOrBlank()) {
-                inputName.setText("Backyard Camera")
-            }
-            Toast.makeText(this, "QR detected (mock)", Toast.LENGTH_SHORT).show()
-        }
-        findViewById<MaterialButton>(R.id.add_camera_nearby_btn).setOnClickListener {
-            inputName.setText("Backyard Camera")
-            inputScanKey.setText("RL-2026-A8F3")
-            Toast.makeText(this, "Found 1 nearby device (mock)", Toast.LENGTH_SHORT).show()
-        }
-
-        findViewById<MaterialButton>(R.id.add_camera_submit).setOnClickListener {
-            val name = inputName.text?.toString()?.trim().orEmpty()
-            if (name.isBlank()) {
-                errorText.text = "Camera name is required"
-                return@setOnClickListener
-            }
-
-            errorText.text = ""
+        findViewById<View>(R.id.add_camera_scan_btn).setOnClickListener {
             startActivity(Intent(this, CameraSetupActivity::class.java))
         }
+        findViewById<View>(R.id.add_camera_nearby_btn).setOnClickListener {
+            startActivity(Intent(this, CameraSetupActivity::class.java))
+        }
+    }
+
+    private fun applyLocalizedTexts(zh: Boolean) {
+        findViewById<TextView>(R.id.add_camera_page_title).text = if (zh) "添加摄像头" else "Add Camera"
+        findViewById<TextView>(R.id.add_camera_scan_hint).text =
+            if (zh) "将摄像头二维码对准框内" else "Align QR code from camera within the frame"
+        findViewById<TextView>(R.id.add_camera_sheet_hint).text =
+            if (zh) "扫描摄像头设备或包装上的二维码" else "Scan the QR code on your camera device or its packaging"
+        findViewById<TextView>(R.id.add_camera_scan_btn).text =
+            if (zh) "手动输入编码" else "Enter code manually"
+        findViewById<TextView>(R.id.add_camera_nearby_btn).text =
+            if (zh) "搜索附近设备" else "Search nearby devices"
+    }
+
+    private fun isChineseLanguage(languageCode: String?): Boolean {
+        if (languageCode.isNullOrBlank()) return false
+        return languageCode.lowercase(Locale.US).startsWith("zh")
     }
 }

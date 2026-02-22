@@ -1,62 +1,89 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:gravity="center_vertical"
-    android:orientation="horizontal"
-    android:paddingTop="14dp"
-    android:paddingBottom="14dp">
-
-    <ImageView
-        android:id="@+id/notification_icon"
-        android:layout_width="42dp"
-        android:layout_height="42dp"
-        android:background="@color/rl_surface"
-        android:padding="11dp"
-        android:src="@drawable/ic_rl_notifications_active_24"
-        android:tint="?attr/colorOnSurfaceVariant" />
+    android:foreground="?attr/selectableItemBackground">
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp">
 
-        <TextView
-            android:id="@+id/notification_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:maxLines="1"
-            android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
-            android:textColor="?attr/colorOnSurface" />
+        <FrameLayout
+            android:id="@+id/notification_icon_container"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:background="@color/rl_surface"
+            android:foregroundGravity="center">
 
-        <TextView
-            android:id="@+id/notification_subtitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:maxLines="2"
-            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            <ImageView
+                android:id="@+id/notification_icon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_rl_notifications_active_24"
+                android:tint="?attr/colorOnSurfaceVariant" />
+        </FrameLayout>
 
-        <TextView
-            android:id="@+id/notification_time"
-            android:layout_width="match_parent"
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
-            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/notification_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/notification_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:maxLines="2"
+                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+                android:id="@+id/notification_time"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/notification_thumb"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="10dp"
+            android:background="@color/rl_surface_alt">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_rl_image_24"
+                android:tint="?attr/colorOnSurfaceVariant" />
+        </FrameLayout>
     </LinearLayout>
 
-    <ImageView
-        android:id="@+id/notification_thumb"
-        android:layout_width="52dp"
-        android:layout_height="52dp"
-        android:layout_marginStart="10dp"
-        android:background="@color/rl_surface_alt"
-        android:padding="14dp"
-        android:src="@drawable/ic_rl_photo_24"
-        android:tint="?attr/colorOnSurfaceVariant" />
+    <View
+        android:id="@+id/notification_unread_dot"
+        android:layout_width="6dp"
+        android:layout_height="6dp"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="-10dp"
+        android:background="@drawable/bg_alert_unread_dot"
+        android:visibility="gone" />
 
-</LinearLayout>
+</FrameLayout>

@@ -1,5 +1,20 @@
 const db = require('./db');
 
+function normalizeDetectionType(rawType) {
+  const t = String(rawType || '').toLowerCase();
+  if (t.includes('person')) return 'person-detected';
+  if (t.includes('motion')) return 'motion-detected';
+  if (t.includes('sound') || t.includes('audio') || t.includes('noise')) return 'sound-detected';
+  return 'event-detected';
+}
+
+function detectionTitle(type) {
+  if (type === 'person-detected') return 'Person Detected';
+  if (type === 'motion-detected') return 'Motion Detected';
+  if (type === 'sound-detected') return 'Sound Detected';
+  return 'Event Detected';
+}
+
 function normalizeEventTsMs(rawTs) {
   const n = Number(rawTs);
   if (!Number.isFinite(n) || n <= 0) return Date.now();
@@ -134,7 +149,9 @@ const Alert = {
     return this.findById(result.lastInsertRowid, userId);
   },
 
-  createPersonDetectedEvent(userId, camera, event = {}) {
+  createDetectionEvent(userId, camera, rawType, event = {}) {
+    const type = normalizeDetectionType(rawType);
+    if (type === 'event-detected') return null;
     const cameraId = Number(camera?.id || 0) || null;
     const cameraName = String(camera?.name || 'Camera');
     const ts = normalizeEventTsMs(event.ts || Date.now());
@@ -144,18 +161,19 @@ const Alert = {
     const y = Math.max(0, Math.floor(Number(bbox.y || 0)));
     const w = Math.max(0, Math.floor(Number(bbox.w || 0)));
     const h = Math.max(0, Math.floor(Number(bbox.h || 0)));
-    const marker = `[evt:${Math.floor(ts)}:${x}:${y}:${w}:${h}]`;
+    const marker = `[evt:${Math.floor(ts)}:${x}:${y}:${w}:${h}:${type}]`;
 
     const existing = db.prepare(`
       SELECT id
       FROM alerts
-      WHERE user_id = ? AND camera_id IS ? AND type = 'person-detected' AND description LIKE ?
+      WHERE user_id = ? AND camera_id IS ? AND type = ? AND description LIKE ?
       LIMIT 1
-    `).get(userId, cameraId, `%${marker}%`);
+    `).get(userId, cameraId, type, `%${marker}%`);
     if (existing) return null;
 
     const scorePct = Math.round(Math.max(0, Math.min(1, score)) * 100);
     const boxText = (w > 0 && h > 0) ? ` bbox=${x},${y},${w}x${h}` : '';
+    const scoreText = scorePct > 0 ? ` (score ${scorePct}%).` : '.';
     const tsSec = Math.max(0, Math.floor(ts / 1000));
     const stmt = db.prepare(`
       INSERT INTO alerts (user_id, camera_id, type, title, description, status, created_at)
@@ -164,13 +182,17 @@ const Alert = {
     const result = stmt.run(
       userId,
       cameraId,
-      'person-detected',
-      'Person Detected',
-      `Person detected on ${cameraName} (score ${scorePct}%).${boxText} ${marker}`.trim(),
+      type,
+      detectionTitle(type),
+      `${detectionTitle(type).replace(' Detected', '')} detected on ${cameraName}${scoreText}${boxText} ${marker}`.trim(),
       'new',
       tsSec
     );
     return this.findById(result.lastInsertRowid, userId);
+  },
+
+  createPersonDetectedEvent(userId, camera, event = {}) {
+    return this.createDetectionEvent(userId, camera, 'person-detected', event);
   },
 
   update(id, userId, data) {

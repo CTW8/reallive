@@ -40,6 +40,20 @@ bool PlayerController::playHistory(const std::string& url, int64_t startMs) {
     return player_->play(source);
 }
 
+void PlayerController::pause() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!player_) return;
+    RL_CTRL_LOGI("pause");
+    player_->pause();
+}
+
+void PlayerController::resume() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!player_) return;
+    RL_CTRL_LOGI("resume");
+    player_->resume();
+}
+
 void PlayerController::seekTo(int64_t positionMs) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!player_) return;

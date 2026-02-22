@@ -1,5 +1,7 @@
 package com.reallive.android.network
 
+import com.google.gson.annotations.SerializedName
+
 data class AuthUserDto(
     val id: Long,
     val username: String,
@@ -22,6 +24,15 @@ data class AuthResponse(
     val user: AuthUserDto,
 )
 
+data class ForgotPasswordRequest(
+    val email: String,
+)
+
+data class ForgotPasswordResponse(
+    val message: String,
+    val temporaryPassword: String? = null,
+)
+
 data class CameraDto(
     val id: Long,
     val name: String,
@@ -31,6 +42,56 @@ data class CameraDto(
     val status: String? = null,
     val thumbnailUrl: String? = null,
     val device: DeviceStateDto? = null,
+    val stream_urls: StreamUrlsDto? = null,
+)
+
+data class CameraSettingsDetailDto(
+    val camera_id: Long = 0L,
+    val location: String = "",
+    val motion_enabled: Boolean = true,
+    val motion_sensitivity: String = "High",
+    val person_enabled: Boolean = true,
+    val sound_enabled: Boolean = false,
+    val sound_sensitivity: String = "Loud",
+    val detection_zones: String = "2 zones configured",
+    val night_vision_enabled: Boolean = true,
+    val night_vision_mode: String = "Auto",
+    val image_flip_mode: String = "Normal",
+    val watermark_enabled: Boolean = true,
+    val firmware_version: String = "v2.3.8",
+    val firmware_update_available: Boolean = true,
+)
+
+data class CameraSettingsResponse(
+    val id: Long = 0L,
+    val name: String = "",
+    val resolution: String = "1080p",
+    val location: String = "",
+    val status: String = "offline",
+    val settings: CameraSettingsDetailDto = CameraSettingsDetailDto(),
+)
+
+data class UpdateCameraSettingsRequest(
+    val name: String? = null,
+    val resolution: String? = null,
+    val location: String? = null,
+    val settings: CameraSettingsDetailDto? = null,
+)
+
+data class CameraNetworkInfoDto(
+    val cameraId: Long = 0L,
+    val connected: Boolean = false,
+    val ssid: String? = null,
+    val signal: String? = null,
+    val ip: String? = null,
+    val model: String? = null,
+)
+
+data class FirmwareUpdateResponse(
+    val ok: Boolean = false,
+    val cameraId: Long = 0L,
+    val firmwareVersion: String? = null,
+    val firmwareUpdateAvailable: Boolean? = null,
 )
 
 data class DeviceStateDto(
@@ -44,19 +105,30 @@ data class DeviceStateDto(
 )
 
 data class StreamInfoDto(
+    @SerializedName(value = "serverBuildTag", alternate = ["server_build_tag"])
+    val serverBuildTag: String? = null,
     val stream_key: String,
     val signaling_url: String? = null,
     val room: String? = null,
     val status: String? = null,
     val camera: CameraDto? = null,
+    val stream_urls: StreamUrlsDto? = null,
     val srs: SrsStreamDto? = null,
     val sei: SeiInfoDto? = null,
+    val camera_settings: CameraSettingsDetailDto? = null,
     val device: DeviceStateDto? = null,
     val liveDemand: WatchStartResponse? = null,
 )
 
+data class StreamUrlsDto(
+    val push: String? = null,
+    val pull_flv: String? = null,
+    val pull_hls: String? = null,
+)
+
 data class SrsKbpsDto(
     val recv_30s: Long? = null,
+    val send_30s: Long? = null,
 )
 
 data class SrsStreamDto(
@@ -64,6 +136,7 @@ data class SrsStreamDto(
     val profile: String? = null,
     val width: Int? = null,
     val height: Int? = null,
+    val fps: Double? = null,
     val clients: Int? = null,
     val kbps: SrsKbpsDto? = null,
 )
@@ -79,12 +152,24 @@ data class SeiTelemetryDto(
     val cpuPct: Double? = null,
     val memoryPct: Double? = null,
     val storagePct: Double? = null,
+    @SerializedName(value = "streamOutFps", alternate = ["stream_out_fps"])
+    val streamOutFps: Double? = null,
+    @SerializedName(value = "streamOutBitrateBps", alternate = ["stream_out_bitrate_bps"])
+    val streamOutBitrateBps: Long? = null,
+    @SerializedName(value = "streamOutBitrateKbps", alternate = ["stream_out_bitrate_kbps"])
+    val streamOutBitrateKbps: Double? = null,
+)
+
+data class SeiCameraConfigDto(
+    val fps: Double? = null,
+    val bitrate: Long? = null,
 )
 
 data class SeiInfoDto(
     val updatedAt: Long? = null,
     val telemetry: SeiTelemetryDto? = null,
     val telemetryHistory: List<SeiTelemetryDto> = emptyList(),
+    val cameraConfig: SeiCameraConfigDto? = null,
     val person: SeiPersonDto? = null,
     val personEvents: List<HistoryTimelineEventDto> = emptyList(),
 )
@@ -241,6 +326,41 @@ data class SessionDto(
     val duration_seconds: Long? = null,
 )
 
+data class AlertDto(
+    val id: Long,
+    val camera_id: Long? = null,
+    val camera_name: String? = null,
+    val type: String,
+    val title: String,
+    val description: String? = null,
+    val status: String? = null,
+    val created_at: String? = null,
+    val event_ts_ms: Long? = null,
+)
+
+data class AlertListResponse(
+    val items: List<AlertDto> = emptyList(),
+    val total: Int = 0,
+    val limit: Int = 0,
+    val offset: Int = 0,
+    val page: Int = 1,
+    val total_pages: Int = 1,
+)
+
+data class AlertBatchRequest(
+    val ids: List<Long>,
+    val action: String,
+)
+
+data class AlertBatchResponse(
+    val success: Boolean,
+    val affected: Int,
+)
+
+data class UnreadCountDto(
+    val count: Int = 0,
+)
+
 data class SessionListResponse(
     val sessions: List<SessionDto> = emptyList(),
     val total: Int = 0,
@@ -250,6 +370,197 @@ data class ActiveSessionResponse(
     val sessions: List<SessionDto> = emptyList(),
 )
 
+data class SessionRevokeResponse(
+    val ok: Boolean = false,
+)
+
 data class DeleteCameraResponse(
     val message: String? = null,
+)
+
+data class SettingsProfileDto(
+    val displayName: String = "",
+    val email: String = "",
+    val phone: String = "",
+    val role: String = "",
+    val signature: String = "",
+    val language: String = "",
+    val timezone: String = "",
+)
+
+data class SettingsNotificationsDto(
+    val email: Boolean = true,
+    val sms: Boolean = false,
+    val webhook: Boolean = false,
+    val sound: Boolean = false,
+    val quietHours: String = "",
+    val escalationDelay: String = "",
+    val escalationRule: String = "",
+)
+
+data class SettingsSystemDto(
+    val nvrMode: String = "",
+    val networkProbe: Boolean = true,
+    val autoLockSec: Int = 60,
+    val darkMode: Boolean = false,
+)
+
+data class SettingsSecurityDto(
+    val twoFactor: Boolean = false,
+    val trustedDevice: Boolean = true,
+    val ipAllowlist: Boolean = false,
+)
+
+data class SettingsAuditLogDto(
+    val id: Long,
+    val action: String = "",
+    val type: String = "",
+    val user: String = "",
+    val time: String? = null,
+)
+
+data class SettingsResponse(
+    val profile: SettingsProfileDto = SettingsProfileDto(),
+    val notifications: SettingsNotificationsDto = SettingsNotificationsDto(),
+    val system: SettingsSystemDto = SettingsSystemDto(),
+    val security: SettingsSecurityDto = SettingsSecurityDto(),
+    val updatedAt: String? = null,
+    val auditLogs: List<SettingsAuditLogDto> = emptyList(),
+)
+
+data class DetectionProfileRequest(
+    val detection: DetectionProfilePatch = DetectionProfilePatch(),
+    val notifications: DetectionNotificationPatch = DetectionNotificationPatch(),
+    val applyAllCameras: Boolean = true,
+)
+
+data class DetectionProfilePatch(
+    val motionEnabled: Boolean = true,
+    val personEnabled: Boolean = true,
+    val soundEnabled: Boolean = false,
+    val motionSensitivity: String = "High",
+    val soundSensitivity: String = "Loud",
+)
+
+data class DetectionNotificationPatch(
+    val pushEnabled: Boolean = true,
+)
+
+data class DetectionProfileStatus(
+    val motionEnabled: Boolean = true,
+    val personEnabled: Boolean = true,
+    val soundEnabled: Boolean = false,
+    val motionSensitivity: String = "High",
+    val soundSensitivity: String = "Loud",
+    val camerasUpdated: Int = 0,
+    val applyAllCameras: Boolean = true,
+)
+
+data class DetectionProfileResponse(
+    val profile: SettingsProfileDto = SettingsProfileDto(),
+    val notifications: SettingsNotificationsDto = SettingsNotificationsDto(),
+    val system: SettingsSystemDto = SettingsSystemDto(),
+    val security: SettingsSecurityDto = SettingsSecurityDto(),
+    val updatedAt: String? = null,
+    val auditLogs: List<SettingsAuditLogDto> = emptyList(),
+    val detection: DetectionProfileStatus = DetectionProfileStatus(),
+)
+
+data class UpdateProfileRequest(
+    val displayName: String,
+    val email: String,
+    val phone: String = "",
+    val signature: String = "",
+    val language: String = "English",
+    val timezone: String = "UTC+08:00",
+)
+
+data class UpdatePreferencesRequest(
+    val notifications: SettingsNotificationsDto = SettingsNotificationsDto(),
+    val system: SettingsSystemDto = SettingsSystemDto(),
+    val security: SettingsSecurityDto = SettingsSecurityDto(),
+)
+
+data class ChangePasswordRequest(
+    val currentPassword: String,
+    val newPassword: String,
+)
+
+data class ChangePasswordResponse(
+    val ok: Boolean = false,
+)
+
+data class SettingsAuditResponse(
+    val rows: List<SettingsAuditLogDto> = emptyList(),
+)
+
+data class StorageCloudDto(
+    val enabled: Boolean = false,
+    val provider: String = "",
+    val bucket: String = "",
+    val region: String = "",
+    val endpoint: String = "",
+    val syncStatus: String = "",
+    val lastSyncMs: Long = 0L,
+    val totalGb: Double = 0.0,
+    val usedGb: Double = 0.0,
+    val freeGb: Double = 0.0,
+    val usedPercent: Double = 0.0,
+)
+
+data class StorageOverviewDto(
+    val total: Double = 0.0,
+    val used: Double = 0.0,
+    val free: Double = 0.0,
+    val usedPercent: Double = 0.0,
+    val deviceCount: Int = 0,
+    val onlineCount: Int = 0,
+    val cloud: StorageCloudDto = StorageCloudDto(),
+)
+
+data class StorageDeviceDto(
+    val id: Long = 0L,
+    val cameraId: Long = 0L,
+    val streamKey: String = "",
+    val name: String = "",
+    val status: String = "",
+    val totalGb: Double = 0.0,
+    val usedGb: Double = 0.0,
+    val freeGb: Double = 0.0,
+    val usedPercent: Double = 0.0,
+    val minFreePercent: Int = 15,
+    val lastUpdateMs: Long = 0L,
+)
+
+data class StorageByDeviceResponse(
+    val devices: List<StorageDeviceDto> = emptyList(),
+)
+
+data class StorageCloudConfigUpdateRequest(
+    val enabled: Boolean,
+    val provider: String,
+    val bucket: String = "",
+    val region: String = "",
+    val endpoint: String = "",
+    val totalGb: Double,
+    val usedGb: Double,
+)
+
+data class StorageCloudConfigUpdateResponse(
+    val success: Boolean = false,
+    val cloud: StorageCloudDto = StorageCloudDto(),
+)
+
+data class StoragePlanDto(
+    val id: String = "",
+    val name: String = "",
+    val totalGb: Double = 0.0,
+    val priceMonthlyUsd: Double = 0.0,
+    val description: String = "",
+)
+
+data class StoragePlansResponse(
+    val plans: List<StoragePlanDto> = emptyList(),
+    val currentTotalGb: Double = 0.0,
+    val currentPlanId: String? = null,
 )

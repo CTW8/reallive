@@ -28,6 +28,7 @@
         <item name="android:colorBackground">@color/rl_bg</item>
         <item name="colorOnBackground">@color/rl_text_primary</item>
         <item name="android:windowBackground">@color/rl_bg</item>
+        <item name="android:textColorHighlight">@android:color/transparent</item>
 
         <item name="android:statusBarColor">@color/rl_bg</item>
         <item name="android:navigationBarColor">@color/rl_bg</item>

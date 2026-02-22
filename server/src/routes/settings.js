@@ -5,6 +5,8 @@ const config = require('../config');
 const db = require('../models/db');
 const User = require('../models/user');
 const UserSettings = require('../models/user-settings');
+const Camera = require('../models/camera');
+const CameraSettings = require('../models/camera-settings');
 
 const router = express.Router();
 
@@ -20,6 +22,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     email: true,
     sms: false,
     webhook: false,
+    sound: false,
     quietHours: 'Disabled',
     escalationDelay: 'After 60 seconds',
     escalationRule: '',
@@ -27,6 +30,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   system: {
     nvrMode: 'Event Priority',
     networkProbe: true,
+    autoLockSec: 60,
+    darkMode: false,
   },
   security: {
     twoFactor: false,
@@ -166,6 +171,69 @@ router.put('/preferences', (req, res) => {
   const user = User.findById(req.user.id);
   pushAudit(req.user.id, 'Updated notification/system preferences', 'config');
   return res.json(buildSettingsPayload(user, stored));
+});
+
+router.post('/detection-profile', (req, res) => {
+  const body = req.body || {};
+  const applyAllCameras = body.applyAllCameras !== false;
+  const patch = body.detection || {};
+  const notif = body.notifications || {};
+
+  const toBool = (value, fallback) => {
+    if (typeof value === 'boolean') return value;
+    if (value == null) return fallback;
+    return String(value).toLowerCase() === 'true';
+  };
+  const clean = (value, fallback) => {
+    if (value == null) return fallback;
+    const s = String(value).trim();
+    return s || fallback;
+  };
+
+  const motionEnabled = toBool(patch.motionEnabled, true);
+  const personEnabled = toBool(patch.personEnabled, true);
+  const soundEnabled = toBool(patch.soundEnabled, false);
+  const motionSensitivity = clean(patch.motionSensitivity, 'High');
+  const soundSensitivity = clean(patch.soundSensitivity, 'Loud');
+
+  const stored = UserSettings.upsert(req.user.id, {
+    notifications: {
+      email: toBool(notif.pushEnabled, true),
+      sms: motionEnabled,
+      webhook: personEnabled,
+      sound: soundEnabled,
+    },
+  });
+
+  let camerasUpdated = 0;
+  if (applyAllCameras) {
+    const cameras = Camera.findByUserId(req.user.id);
+    cameras.forEach((cam) => {
+      CameraSettings.upsert(cam.id, {
+        motion_enabled: motionEnabled,
+        motion_sensitivity: motionSensitivity,
+        person_enabled: personEnabled,
+        sound_enabled: soundEnabled,
+        sound_sensitivity: soundSensitivity,
+      });
+      camerasUpdated += 1;
+    });
+  }
+
+  const user = User.findById(req.user.id);
+  pushAudit(req.user.id, 'Updated global detection profile', 'config');
+  return res.json({
+    ...buildSettingsPayload(user, stored),
+    detection: {
+      motionEnabled,
+      personEnabled,
+      soundEnabled,
+      motionSensitivity,
+      soundSensitivity,
+      camerasUpdated,
+      applyAllCameras,
+    },
+  });
 });
 
 router.post('/password', (req, res) => {

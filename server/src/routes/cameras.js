@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const authMiddleware = require('../middleware/auth');
 const Camera = require('../models/camera');
+const CameraSettings = require('../models/camera-settings');
 const { getStreamInfo } = require('../services/srsSync');
 const { getSeiInfo } = require('../services/seiMonitor');
 const { getDeviceState } = require('../services/mqttControlService');
@@ -11,6 +12,7 @@ const { getHistoryOverview, getTimeline, getPlayback, getLatestThumbnail } = req
 const config = require('../config');
 
 const router = express.Router();
+const CAMERA_STREAM_API_BUILD_TAG = 'camera-stream-v6';
 
 function normalizeHost(host) {
   const value = String(host || '').split(',')[0].trim();
@@ -28,6 +30,15 @@ function applyTemplate(template, data) {
     if (data[key] == null) return '';
     return String(data[key]);
   });
+}
+
+function bumpFirmwareVersion(version) {
+  const m = String(version || '').match(/^v?(\d+)\.(\d+)\.(\d+)$/i);
+  if (!m) return 'v2.3.9';
+  const major = Number(m[1]) || 0;
+  const minor = Number(m[2]) || 0;
+  const patch = (Number(m[3]) || 0) + 1;
+  return `v${major}.${minor}.${patch}`;
 }
 
 function buildStreamUrls(req, streamKey) {
@@ -135,6 +146,7 @@ router.get('/:id/stream', (req, res) => {
   // Get real-time SRS stream info if available
   const srsInfo = getStreamInfo(camera.stream_key);
   const seiInfo = getSeiInfo(camera.stream_key);
+  const cameraSettings = CameraSettings.getByCameraId(camera.id);
   const device = getDeviceState(camera.stream_key);
   const liveDemand = liveDemandService.getCameraDemandState(camera.id);
   const runtimeStatus = device
@@ -142,14 +154,21 @@ router.get('/:id/stream', (req, res) => {
     : null;
   const effectiveStatus = runtimeStatus || camera.status || 'offline';
   const thumbnailUrl = effectiveStatus === 'offline' ? null : getLatestThumbnail(camera.stream_key);
-  if (process.env.CAMERA_STREAM_INFO_LOG === '1') {
-    console.log(`[Camera API] Getting stream info for camera ${camera.id}, stream_key=${camera.stream_key}, srs=${JSON.stringify(srsInfo)}`);
+  if (process.env.CAMERA_STREAM_INFO_LOG !== '0') {
+    const seiTelemetry = seiInfo?.telemetry || null;
+    console.log(
+      `[Camera API] stream camera=${camera.id} key=${camera.stream_key} ` +
+      `srsFps=${srsInfo?.fps ?? 'null'} srsRecv=${srsInfo?.kbps?.recv_30s ?? 'null'} srsSend=${srsInfo?.kbps?.send_30s ?? 'null'} ` +
+      `seiFps=${seiTelemetry?.streamOutFps ?? 'null'} seiKbps=${seiTelemetry?.streamOutBitrateKbps ?? 'null'} seiUpdated=${seiInfo?.updatedAt ?? 'null'}`
+    );
   }
 
   res.json({
+    serverBuildTag: CAMERA_STREAM_API_BUILD_TAG,
     camera: {
       id: camera.id,
       name: camera.name,
+      location: camera.location || '',
       resolution: camera.resolution,
       status: effectiveStatus,
       thumbnailUrl,
@@ -161,8 +180,104 @@ router.get('/:id/stream', (req, res) => {
     status: effectiveStatus,
     srs: srsInfo,
     sei: seiInfo,
+    camera_settings: cameraSettings,
     device: device || null,
     liveDemand,
+  });
+});
+
+// GET /api/cameras/:id/settings
+router.get('/:id/settings', (req, res) => {
+  const camera = Camera.findById(req.params.id);
+  if (!camera) {
+    return res.status(404).json({ error: 'Camera not found' });
+  }
+  if (camera.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const settings = CameraSettings.getByCameraId(camera.id);
+  return res.json({
+    id: camera.id,
+    name: camera.name,
+    resolution: camera.resolution || '1080p',
+    location: camera.location || settings.location || '',
+    status: camera.status || 'offline',
+    settings,
+  });
+});
+
+// PUT /api/cameras/:id/settings
+router.put('/:id/settings', (req, res) => {
+  const camera = Camera.findById(req.params.id);
+  if (!camera) {
+    return res.status(404).json({ error: 'Camera not found' });
+  }
+  if (camera.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const cameraPatch = {};
+  if (req.body?.name != null) cameraPatch.name = String(req.body.name).trim();
+  if (req.body?.resolution != null) cameraPatch.resolution = String(req.body.resolution).trim();
+  if (req.body?.location != null) cameraPatch.location = String(req.body.location).trim();
+  if (cameraPatch.name === '') {
+    return res.status(400).json({ error: 'Camera name cannot be empty' });
+  }
+
+  const updatedCamera = Camera.update(camera.id, req.user.id, cameraPatch);
+  const settings = CameraSettings.upsert(camera.id, req.body?.settings || req.body || {});
+  return res.json({
+    id: updatedCamera.id,
+    name: updatedCamera.name,
+    resolution: updatedCamera.resolution || '1080p',
+    location: updatedCamera.location || settings.location || '',
+    status: updatedCamera.status || 'offline',
+    settings,
+  });
+});
+
+// GET /api/cameras/:id/network
+router.get('/:id/network', (req, res) => {
+  const camera = Camera.findById(req.params.id);
+  if (!camera) {
+    return res.status(404).json({ error: 'Camera not found' });
+  }
+  if (camera.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const device = getDeviceState(camera.stream_key);
+  const suffix = String(camera.stream_key || '').slice(0, 6);
+  const connected = camera.status !== 'offline' || !!device;
+  return res.json({
+    cameraId: camera.id,
+    connected,
+    ssid: `camera-${suffix}`,
+    signal: device?.activeLive ? 'Excellent' : (connected ? 'Good' : 'Disconnected'),
+    ip: camera.ip_address || null,
+    model: camera.model || 'RealLive Cam',
+  });
+});
+
+// POST /api/cameras/:id/firmware/update
+router.post('/:id/firmware/update', (req, res) => {
+  const camera = Camera.findById(req.params.id);
+  if (!camera) {
+    return res.status(404).json({ error: 'Camera not found' });
+  }
+  if (camera.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const settings = CameraSettings.getByCameraId(camera.id);
+  const nextVersion = bumpFirmwareVersion(settings.firmware_version);
+  const next = CameraSettings.upsert(camera.id, {
+    firmware_version: nextVersion,
+    firmware_update_available: 0,
+  });
+  return res.json({
+    ok: true,
+    cameraId: camera.id,
+    firmwareVersion: next.firmware_version,
+    firmwareUpdateAvailable: next.firmware_update_available,
   });
 });
 

@@ -9,6 +9,7 @@ const { RECORDINGS_ROOTS, getLatestThumbnail } = require('./services/historyServ
 const liveDemandService = require('./services/liveDemandService');
 const { start: startMqttControl, setStateEventEmitter } = require('./services/mqttControlService');
 const Camera = require('./models/camera');
+const CameraSettings = require('./models/camera-settings');
 const Alert = require('./models/alert');
 
 const server = http.createServer(app);
@@ -29,13 +30,18 @@ setSeiEventEmitter((streamKey, event) => {
   const camera = Camera.findByStreamKey(streamKey);
   if (!camera) return;
 
-  if (String(event?.type || '') === 'person-detected') {
+  const eventType = String(event?.type || '');
+  if (eventType.includes('detected')) {
+    const cs = CameraSettings.getByCameraId(camera.id);
+    if (eventType.includes('person') && !cs?.person_enabled) return;
+    if (eventType.includes('motion') && !cs?.motion_enabled) return;
+    if ((eventType.includes('sound') || eventType.includes('audio')) && !cs?.sound_enabled) return;
     const now = Date.now();
     const lastTs = Number(personAlertCooldownByCamera.get(camera.id) || 0);
     if (now - lastTs >= PERSON_ALERT_COOLDOWN_MS) {
       personAlertCooldownByCamera.set(camera.id, now);
       try {
-        Alert.createPersonDetectedEvent(camera.user_id, camera, event);
+        Alert.createDetectionEvent(camera.user_id, camera, eventType, event);
       } catch (err) {
         console.error('[SEI Alert] create failed:', err?.message || err);
       }
