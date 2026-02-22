@@ -2275,7 +2275,7 @@ void Pipeline::videoLoop() {
                 const int currentLevel = runtimeProfileLevel_.load();
                 const int64_t sinceSwitch = nowMs - runtimeLastSwitchMs_.load();
                 const bool pushActive = livePushDesired_.load() && livePushActive_.load();
-                const double targetBps = static_cast<double>(runtimeProfileTargetBitrateKbps_.load()) * 1000.0;
+                const double targetFpsEval = std::max(1, runtimeProfileTargetFps_.load());
                 double avg10sBps = 0.0;
                 if (!bitrate10sWindow.empty()) {
                     double sum = 0.0;
@@ -2284,19 +2284,16 @@ void Pipeline::videoLoop() {
                 }
                 const double fastBps = currentOutBitrateBps;
                 const double stableBps = avg10sBps > 0.0 ? avg10sBps : ewmaOutBitrateBps;
+                const bool fpsBad = currentFps_.load() < targetFpsEval * 0.90;
+                const bool fpsGood = currentFps_.load() >= targetFpsEval * 0.98;
                 const bool bad = pushActive && (
-                                 (sendDropDelta > 8) ||
-                                 (sinceSwitch > 8000 &&
-                                  targetBps > 0.0 &&
-                                  fastBps > 0.0 &&
-                                  stableBps > 0.0 &&
-                                  fastBps < targetBps * 0.65 &&
-                                  stableBps < targetBps * 0.80));
-                const bool good = pushActive && (sendDropDelta == 0) &&
-                                  (targetBps > 0.0 &&
-                                   sinceSwitch > 8000 &&
-                                   fastBps > targetBps * 1.20 &&
-                                   stableBps > targetBps * 1.05);
+                    (sendDropDelta > 8) ||
+                    (sinceSwitch > 8000 && fpsBad)
+                );
+                const bool good = pushActive &&
+                                  (sendDropDelta == 0) &&
+                                  (sinceSwitch > 12000) &&
+                                  fpsGood;
 
                 if (bad) {
                     if (runtimeAdaptBadSinceMs_.load() <= 0) runtimeAdaptBadSinceMs_ = nowMs;
@@ -2331,6 +2328,8 @@ void Pipeline::videoLoop() {
                               << " goodMs=" << goodMs
                               << " goodNeedMs=" << (upNeedSec * 1000)
                               << " sendDropDelta=" << sendDropDelta
+                              << " fpsNow=" << std::fixed << std::setprecision(2) << currentFps_.load()
+                              << " fpsTarget=" << targetFpsEval
                               << " fastKbps=" << static_cast<int>(fastBps / 1000.0)
                               << " ewmaKbps=" << static_cast<int>(ewmaOutBitrateBps / 1000.0)
                               << " avg10sKbps=" << static_cast<int>(avg10sBps / 1000.0)
