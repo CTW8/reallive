@@ -1756,8 +1756,6 @@ void Pipeline::videoLoop() {
     });
 
     std::thread sendThread([&]() {
-        int64_t sendWindowStartMs = wallClockMs();
-        uint64_t sendWindowBytes = 0;
         while (true) {
             EncodedPacket packet;
             {
@@ -1772,19 +1770,6 @@ void Pipeline::videoLoop() {
             if (packet.empty()) continue;
 
             if (!livePushDesired_.load()) {
-                sendDropped++;
-                continue;
-            }
-
-            const int targetKbps = std::max(100, runtimeProfileTargetBitrateKbps_.load());
-            const uint64_t targetBytesPerSec = static_cast<uint64_t>(targetKbps) * 1000ull / 8ull;
-            const int64_t nowMs = wallClockMs();
-            if (nowMs - sendWindowStartMs >= 1000) {
-                sendWindowStartMs = nowMs;
-                sendWindowBytes = 0;
-            }
-            if (!packet.isKeyframe && sendWindowBytes + packet.data.size() > targetBytesPerSec) {
-                sendDropped++;
                 continue;
             }
 
@@ -1792,7 +1777,6 @@ void Pipeline::videoLoop() {
             {
                 std::lock_guard<std::mutex> streamLock(streamerMutex_);
                 if (!livePushDesired_.load()) {
-                    sendDropped++;
                     continue;
                 }
                 if (!streamer_->isConnected()) {
@@ -1818,7 +1802,6 @@ void Pipeline::videoLoop() {
             if (!sentOk) continue;
             framesSent_++;
             bytesSent_ += packet.data.size();
-            sendWindowBytes += packet.data.size();
         }
     });
 
@@ -2246,6 +2229,7 @@ void Pipeline::videoLoop() {
             if (mode == "auto") {
                 const int currentLevel = runtimeProfileLevel_.load();
                 const int64_t sinceSwitch = nowMs - runtimeLastSwitchMs_.load();
+                const bool pushActive = livePushDesired_.load() && livePushActive_.load();
                 const double targetBps = static_cast<double>(runtimeProfileTargetBitrateKbps_.load()) * 1000.0;
                 double avg10sBps = 0.0;
                 if (!bitrate10sWindow.empty()) {
@@ -2255,14 +2239,17 @@ void Pipeline::videoLoop() {
                 }
                 const double fastBps = currentOutBitrateBps;
                 const double stableBps = avg10sBps > 0.0 ? avg10sBps : ewmaOutBitrateBps;
-                const bool bad = (sendDropDelta > 0) ||
-                                 (targetBps > 0.0 &&
+                const bool bad = pushActive && (
+                                 (sendDropDelta > 8) ||
+                                 (sinceSwitch > 8000 &&
+                                  targetBps > 0.0 &&
                                   fastBps > 0.0 &&
                                   stableBps > 0.0 &&
                                   fastBps < targetBps * 0.65 &&
-                                  stableBps < targetBps * 0.80);
-                const bool good = (sendDropDelta == 0) &&
+                                  stableBps < targetBps * 0.80));
+                const bool good = pushActive && (sendDropDelta == 0) &&
                                   (targetBps > 0.0 &&
+                                   sinceSwitch > 8000 &&
                                    fastBps > targetBps * 1.20 &&
                                    stableBps > targetBps * 1.05);
 
