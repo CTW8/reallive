@@ -285,19 +285,12 @@ class WatchActivity : AppCompatActivity() {
             status.isNotBlank() -> status.replaceFirstChar { it.titlecase(Locale.US) }
             else -> if (isChineseLanguage(appConfig.getAppLanguage())) "在线" else "Online"
         }
-        val resolution = info.camera?.resolution
-            ?: if ((info.srs?.width ?: 0) > 0 && (info.srs?.height ?: 0) > 0) {
-                "${info.srs?.width}x${info.srs?.height}"
-            } else {
-                "Auto"
-            }
-        val profileOption = info.effectiveProfile?.profileOption?.lowercase(Locale.US)
-        resolutionChip.text = if (profileOption != null && profileOption != "auto" &&
-            (profileOption == "360p" || profileOption == "540p" || profileOption == "720p" || profileOption == "1080p")
-        ) {
-            "$resolution · ${profileOption.uppercase(Locale.US)}"
-        } else {
-            resolution
+        val srsW = info.srs?.width ?: 0
+        val srsH = info.srs?.height ?: 0
+        resolutionChip.text = when {
+            srsW > 0 && srsH > 0 -> "${srsW}x${srsH}"
+            !info.camera?.resolution.isNullOrBlank() -> info.camera?.resolution ?: "--"
+            else -> "--"
         }
         applyTelemetryChips(info)
         applyCameraRuntimeSettings(info)
@@ -335,8 +328,8 @@ class WatchActivity : AppCompatActivity() {
                 playerView.rotation = 0f
             }
         }
-        val nightOn = cs.night_vision_enabled && cs.night_vision_mode.equals("auto", true)
-        nightOverlay.visibility = if (nightOn) View.VISIBLE else View.GONE
+        // Night-vision color grading is done in pusher/player path. App overlay causes color cast.
+        nightOverlay.visibility = View.GONE
         if (cs.watermark_enabled) {
             val ts = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
             watermarkText.text = "${cameraName}  $ts"

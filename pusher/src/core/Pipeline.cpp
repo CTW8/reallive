@@ -119,11 +119,11 @@ struct StreamLevelConfig {
 StreamLevelConfig levelConfig(int level) {
     const int safe = std::max(0, std::min(4, level));
     switch (safe) {
-    case 0: return {640, 360, 15, 700};
-    case 1: return {960, 540, 20, 1200};
+    case 0: return {640, 360, 25, 700};
+    case 1: return {960, 540, 25, 1200};
     case 2: return {1280, 720, 25, 2000};
-    case 3: return {1280, 720, 28, 2800};
-    default: return {1920, 1080, 30, 4000};
+    case 3: return {1920, 1080, 25, 2800};
+    default: return {1920, 1080, 25, 4000};
     }
 }
 
@@ -254,6 +254,27 @@ void applyNightVisionNv12(std::vector<uint8_t>& data, int width, int height) {
         uv[i] = 96;      // U
         uv[i + 1] = 140; // V
     }
+}
+
+double estimateNv12LumaMean(const std::vector<uint8_t>& data, int width, int height) {
+    if (width <= 0 || height <= 0) return 255.0;
+    const size_t ySize = static_cast<size_t>(width) * static_cast<size_t>(height);
+    if (data.size() < ySize) return 255.0;
+    const uint8_t* y = data.data();
+
+    const int stepX = std::max(1, width / 64);
+    const int stepY = std::max(1, height / 36);
+    uint64_t sum = 0;
+    uint64_t cnt = 0;
+    for (int yy = 0; yy < height; yy += stepY) {
+        const size_t row = static_cast<size_t>(yy) * static_cast<size_t>(width);
+        for (int xx = 0; xx < width; xx += stepX) {
+            sum += y[row + static_cast<size_t>(xx)];
+            cnt++;
+        }
+    }
+    if (cnt == 0) return 255.0;
+    return static_cast<double>(sum) / static_cast<double>(cnt);
 }
 
 int64_t wallClockMs() {
@@ -1500,10 +1521,11 @@ bool Pipeline::init(const PusherConfig& config) {
     runtimeImageFlipMode_ = 0;
     runtimeNightVisionEnabled_ = false;
     runtimeNightVisionMode_ = 0;
-    runtimeProfileTargetWidth_ = std::max(2, config_.encoder.width);
-    runtimeProfileTargetHeight_ = std::max(2, config_.encoder.height);
-    runtimeProfileTargetFps_ = std::max(1, config_.encoder.fps);
-    runtimeProfileTargetBitrateKbps_ = std::max(100, config_.encoder.bitrate / 1000);
+    const auto bootLevelCfg = levelConfig(runtimeProfileLevel_.load());
+    runtimeProfileTargetWidth_ = bootLevelCfg.width;
+    runtimeProfileTargetHeight_ = bootLevelCfg.height;
+    runtimeProfileTargetFps_ = bootLevelCfg.fps;
+    runtimeProfileTargetBitrateKbps_ = bootLevelCfg.bitrateKbps;
 
     if (!createComponents(config)) {
         std::cerr << "[Pipeline] Failed to create components" << std::endl;
@@ -1824,6 +1846,8 @@ void Pipeline::videoLoop() {
     constexpr int64_t kOverlayFreshMs = 160;
     int64_t lastEncodedFrameMs = 0;
     uint64_t lastSendDropForAdapt = 0;
+    bool autoNightVisionActive = false;
+    auto lastAutoNightEval = Clock::now() - std::chrono::seconds(1);
     int activeEncWidth = std::max(2, config_.encoder.width);
     int activeEncHeight = std::max(2, config_.encoder.height);
     int activeEncFps = std::max(1, config_.encoder.fps);
@@ -2011,7 +2035,28 @@ void Pipeline::videoLoop() {
 
         const bool nightEnabled = runtimeNightVisionEnabled_.load();
         const int nightMode = runtimeNightVisionMode_.load();
-        if (nightEnabled && nightMode != 2) {
+        bool applyNightVision = false;
+        if (nightEnabled) {
+            if (nightMode == 1) {
+                applyNightVision = true;
+            } else if (nightMode == 0) {
+                // Auto mode: enable only in low light with hysteresis to avoid flicker/color cast.
+                auto nowAuto = Clock::now();
+                if (nowAuto - lastAutoNightEval >= std::chrono::milliseconds(250)) {
+                    const double luma = estimateNv12LumaMean(frame.data, frame.width, frame.height);
+                    const double onThreshold = 70.0;
+                    const double offThreshold = 86.0;
+                    if (!autoNightVisionActive && luma <= onThreshold) {
+                        autoNightVisionActive = true;
+                    } else if (autoNightVisionActive && luma >= offThreshold) {
+                        autoNightVisionActive = false;
+                    }
+                    lastAutoNightEval = nowAuto;
+                }
+                applyNightVision = autoNightVisionActive;
+            }
+        }
+        if (applyNightVision) {
             applyNightVisionNv12(frame.data, frame.width, frame.height);
         }
 
