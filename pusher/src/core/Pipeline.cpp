@@ -2390,6 +2390,15 @@ void Pipeline::videoLoop() {
                 const bool fastDownAllowed = severeFpsBad || overloadBad;
                 const bool canSwitch = fastDownAllowed || (sinceSwitch >= static_cast<int64_t>(cooldownSec) * 1000);
                 const int effectiveDownNeedSec = fastDownAllowed ? 1 : downNeedSec;
+                const int nextUpLevel = currentLevel + 1;
+                const bool highLevelCandidate = nextUpLevel >= 3;
+                const int effectiveUpNeedSec = highLevelCandidate ? std::max(upNeedSec, 45) : upNeedSec;
+                const double frameBudgetUs = 1000000.0 / targetFpsEval;
+                const bool fpsHeadroomOk = currentFps_.load() >= targetFpsEval * 0.99;
+                const bool cpuHeadroomOk = static_cast<double>(avgProcessTime) <= frameBudgetUs * 0.80 &&
+                                           static_cast<double>(p99Time) <= frameBudgetUs * 1.10;
+                const bool noDropHeadroom = (sendDropDelta == 0) && (captureDropDelta == 0);
+                const bool highLevelGateOk = !highLevelCandidate || (fpsHeadroomOk && cpuHeadroomOk && noDropHeadroom);
                 const int64_t badMs = runtimeAdaptBadSinceMs_.load() > 0 ? (nowMs - runtimeAdaptBadSinceMs_.load()) : 0;
                 const int64_t goodMs = runtimeAdaptGoodSinceMs_.load() > 0 ? (nowMs - runtimeAdaptGoodSinceMs_.load()) : 0;
 
@@ -2405,10 +2414,13 @@ void Pipeline::videoLoop() {
                               << " badNeedMs=" << (downNeedSec * 1000)
                               << " good=" << (good ? "1" : "0")
                               << " goodMs=" << goodMs
-                              << " goodNeedMs=" << (upNeedSec * 1000)
+                              << " goodNeedMs=" << (effectiveUpNeedSec * 1000)
                               << " sendDropDelta=" << sendDropDelta
                               << " captureDropDelta=" << captureDropDelta
                               << " fastDownAllowed=" << (fastDownAllowed ? "1" : "0")
+                              << " hiLevelCand=" << (highLevelCandidate ? "1" : "0")
+                              << " hiGateOk=" << (highLevelGateOk ? "1" : "0")
+                              << " cpuHeadroomOk=" << (cpuHeadroomOk ? "1" : "0")
                               << " fpsNow=" << std::fixed << std::setprecision(2) << currentFps_.load()
                               << " fpsTarget=" << targetFpsEval
                               << " fastKbps=" << static_cast<int>(fastBps / 1000.0)
@@ -2438,8 +2450,9 @@ void Pipeline::videoLoop() {
                               << " fpsNow=" << std::fixed << std::setprecision(2) << currentFps_.load()
                               << " outKbps=" << static_cast<int>(currentOutBitrateBps / 1000.0) << std::endl;
                 } else if (canSwitch && runtimeAdaptGoodSinceMs_.load() > 0 &&
-                           nowMs - runtimeAdaptGoodSinceMs_.load() >= static_cast<int64_t>(upNeedSec) * 1000 &&
-                           currentLevel < maxLevel) {
+                           nowMs - runtimeAdaptGoodSinceMs_.load() >= static_cast<int64_t>(effectiveUpNeedSec) * 1000 &&
+                           currentLevel < maxLevel &&
+                           highLevelGateOk) {
                     const int nextLevel = currentLevel + 1;
                     const auto cfg = levelConfig(nextLevel, resolveOutputFps(config_.camera.fps, config_.encoder.fps));
                     runtimeProfileLevel_ = nextLevel;

@@ -339,7 +339,11 @@ void destroyEgl(NativePlayerContext* ctx) {
                 hasGlContext = true;
             } else {
                 const EGLint eglErr = eglGetError();
-                RL_LOGE("destroyEgl eglMakeCurrent failed: 0x%x", static_cast<unsigned>(eglErr));
+                if (eglErr == EGL_BAD_ACCESS) {
+                    RL_LOGI("destroyEgl skip makeCurrent: context owned by another thread (0x%x)", static_cast<unsigned>(eglErr));
+                } else {
+                    RL_LOGE("destroyEgl eglMakeCurrent failed: 0x%x", static_cast<unsigned>(eglErr));
+                }
             }
         }
         if (hasGlContext) {
@@ -354,7 +358,9 @@ void destroyEgl(NativePlayerContext* ctx) {
             ctx->glTexWidth = 0;
             ctx->glTexHeight = 0;
         }
-        eglMakeCurrent(ctx->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (eglGetCurrentDisplay() == ctx->display) {
+            eglMakeCurrent(ctx->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        }
         if (ctx->surface != EGL_NO_SURFACE) {
             eglDestroySurface(ctx->display, ctx->surface);
             ctx->surface = EGL_NO_SURFACE;
@@ -1193,7 +1199,11 @@ void decodeLoop(NativePlayerContext* ctx) {
             }
             ret = avcodec_send_packet(session.codecCtx, session.packet);
             if (ret < 0 && ret != AVERROR(EAGAIN)) {
-                RL_LOGE("avcodec_send_packet failed: %d", ret);
+                if (ctx->interruptRequested.load() || !ctx->playing.load() || !ctx->running.load()) {
+                    RL_LOGI("avcodec_send_packet interrupted: %d", ret);
+                } else {
+                    RL_LOGE("avcodec_send_packet failed: %d", ret);
+                }
             }
             if (ret >= 0) {
                 while (ret >= 0) {
