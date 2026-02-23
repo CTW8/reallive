@@ -5,7 +5,6 @@ import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.media.MediaScannerConnection
-import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -17,15 +16,14 @@ import android.view.PixelCopy
 import android.view.View
 import android.widget.TextView
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.Toast
 import android.provider.MediaStore
 import android.net.Uri
 import java.text.SimpleDateFormat
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -71,10 +69,12 @@ class WatchActivity : AppCompatActivity() {
     private lateinit var actionPtzText: TextView
     private lateinit var actionDownloadText: TextView
     private lateinit var qualityLabel: TextView
+    private lateinit var volumeLabel: TextView
     private lateinit var recentEventsTitleText: TextView
     private lateinit var playerView: PlayerSurfaceView
     private lateinit var controlsPanel: View
-    private lateinit var fullscreenIcon: ImageView
+    private lateinit var videoContainer: View
+    private lateinit var topBar: View
     private lateinit var placeholderIcon: View
     private lateinit var nightOverlay: View
     private lateinit var watermarkText: TextView
@@ -86,7 +86,6 @@ class WatchActivity : AppCompatActivity() {
     private var lastPlaybackTs: Long? = null
     private var micEnabled: Boolean = false
     private var isMuted: Boolean = false
-    private var isFullscreen: Boolean = false
     private var streamFlv: String? = null
     private var streamHls: String? = null
     private var lastPlayerResolution: String? = null
@@ -133,10 +132,12 @@ class WatchActivity : AppCompatActivity() {
         actionPtzText = findViewById(R.id.watch_action_ptz_label)
         actionDownloadText = findViewById(R.id.watch_action_download_label)
         qualityLabel = findViewById(R.id.watch_quality_label)
+        volumeLabel = findViewById(R.id.watch_volume_label)
         recentEventsTitleText = findViewById(R.id.watch_recent_events_title)
         playerView = findViewById(R.id.watch_player_view)
         controlsPanel = findViewById(R.id.watch_controls_panel)
-        fullscreenIcon = findViewById(R.id.watch_fullscreen_icon)
+        videoContainer = findViewById(R.id.watch_video_container)
+        topBar = findViewById(R.id.watch_top_bar)
         placeholderIcon = findViewById(R.id.watch_placeholder_icon)
         nightOverlay = findViewById(R.id.watch_night_overlay)
         watermarkText = findViewById(R.id.watch_watermark)
@@ -234,9 +235,6 @@ class WatchActivity : AppCompatActivity() {
         }
         findViewById<View>(R.id.btn_watch_quality).setOnClickListener {
             openQualityOptions()
-        }
-        findViewById<View>(R.id.btn_watch_fullscreen).setOnClickListener {
-            toggleFullscreen()
         }
         findViewById<View>(R.id.btn_watch_download).setOnClickListener {
             val ts = lastPlaybackTs ?: System.currentTimeMillis()
@@ -416,38 +414,21 @@ class WatchActivity : AppCompatActivity() {
     private fun openQualityOptions() {
         if (cameraId <= 0L) return
         val items = arrayOf(
-            tr("Auto (Adaptive Stream)", "自动（自适应）"),
-            tr("Stream: 360p", "码流：360p"),
-            tr("Stream: 540p", "码流：540p"),
-            tr("Stream: 720p", "码流：720p"),
-            tr("Stream: 1080p", "码流：1080p"),
-            tr("Sensor: 720p", "传感器：720p"),
-            tr("Sensor: 1080p", "传感器：1080p"),
-            tr("Sensor: 2K", "传感器：2K"),
-            tr("Sensor: 4K", "传感器：4K"),
-            tr("Advanced Camera Settings", "高级摄像头设置"),
+            "360p",
+            "540p",
+            "720p",
+            "1080p",
+            "auto",
         )
         MaterialAlertDialogBuilder(this)
-            .setTitle(tr("Quality & Resolution", "画质与分辨率"))
+            .setTitle(tr("Resolution", "分辨率"))
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> applyStreamProfile("auto")
-                    1 -> applyStreamProfile("360p")
-                    2 -> applyStreamProfile("540p")
-                    3 -> applyStreamProfile("720p")
-                    4 -> applyStreamProfile("1080p")
-                    5 -> applyCameraResolution("720p")
-                    6 -> applyCameraResolution("1080p")
-                    7 -> applyCameraResolution("2K")
-                    8 -> applyCameraResolution("4K")
-                    9 -> {
-                        startActivity(
-                            Intent(this, CameraSettingsActivity::class.java).apply {
-                                putExtra(CameraSettingsActivity.EXTRA_CAMERA_ID, cameraId)
-                                putExtra(CameraSettingsActivity.EXTRA_CAMERA_NAME, cameraName)
-                            },
-                        )
-                    }
+                    0 -> applyStreamProfile("360p")
+                    1 -> applyStreamProfile("540p")
+                    2 -> applyStreamProfile("720p")
+                    3 -> applyStreamProfile("1080p")
+                    4 -> applyStreamProfile("auto")
                 }
             }
             .setNegativeButton(tr("Cancel", "取消"), null)
@@ -519,38 +500,8 @@ class WatchActivity : AppCompatActivity() {
         }
     }
 
-    private fun toggleFullscreen() {
-        isFullscreen = !isFullscreen
-        requestedOrientation = if (isFullscreen) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        }
-        applyFullscreenUiState()
-    }
-
     override fun onBackPressed() {
-        if (isFullscreen) {
-            isFullscreen = false
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            applyFullscreenUiState()
-            return
-        }
         navigateBackByDesign()
-    }
-
-    private fun applyFullscreenUiState() {
-        controlsPanel.visibility = if (isFullscreen) View.GONE else View.VISIBLE
-        fullscreenIcon.setImageResource(R.drawable.ic_rl_fullscreen_24)
-        WindowCompat.setDecorFitsSystemWindows(window, !isFullscreen)
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
-        if (isFullscreen) {
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            controller.show(WindowInsetsCompat.Type.systemBars())
-        }
     }
 
     private fun updateQualityLabel() {
@@ -739,6 +690,7 @@ class WatchActivity : AppCompatActivity() {
         actionPtzText.text = "PTZ"
         actionDownloadText.text = if (zh) "下载" else "Download"
         recentEventsTitleText.text = if (zh) "最近事件" else "Recent Events"
+        volumeLabel.text = if (zh) "声音" else "Volume"
     }
 
     private fun isChineseLanguage(languageCode: String?): Boolean {

@@ -1,219 +1,340 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0F0E18">
-
-    <ImageView
-        android:layout_width="72dp"
-        android:layout_height="72dp"
-        android:layout_gravity="center"
-        android:src="@drawable/ic_rl_door_front_24"
-        android:tint="#33FFFFFF" />
+    android:background="@color/auth_bg"
+    android:orientation="vertical">
 
     <LinearLayout
+        android:id="@+id/ptz_top_bar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
+        android:layout_height="52dp"
+        android:layout_marginStart="12dp"
         android:layout_marginTop="8dp"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="8dp"
+        android:layout_marginEnd="12dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <ImageButton
             android:id="@+id/ptz_back"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@android:color/transparent"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_live_control"
             android:contentDescription="Back"
             android:padding="8dp"
             android:src="@drawable/ic_arrow_back_24"
             android:tint="@color/white" />
 
-        <TextView
-            android:id="@+id/ptz_title"
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="PTZ Control"
-            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-            android:textColor="@color/white" />
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/ptz_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Front Door"
+                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+                android:textColor="@color/white" />
+
+            <LinearLayout
+                android:id="@+id/ptz_live_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:background="@color/rl_error"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="8dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="2dp">
+
+                <View
+                    android:layout_width="5dp"
+                    android:layout_height="5dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@color/white" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="LIVE"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                    android:textColor="@color/white" />
+            </LinearLayout>
+        </LinearLayout>
 
         <ImageButton
             android:id="@+id/ptz_more"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@android:color/transparent"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_live_control"
             android:contentDescription="More"
             android:padding="8dp"
             android:src="@drawable/ic_rl_more_vert_24"
             android:tint="@color/white" />
     </LinearLayout>
 
-    <LinearLayout
+    <FrameLayout
+        android:id="@+id/ptz_video_wrap"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:layout_marginBottom="20dp"
+        android:layout_height="220dp"
+        android:background="#070611">
+
+        <com.reallive.player.PlayerSurfaceView
+            android:id="@+id/ptz_player_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <ImageView
+            android:id="@+id/ptz_placeholder_icon"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_rl_door_front_24"
+            android:tint="#33FFFFFF" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/ptz_controls_panel"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:paddingStart="16dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="16dp">
 
         <FrameLayout
-            android:layout_width="200dp"
-            android:layout_height="200dp"
-            android:layout_gravity="center_horizontal"
-            android:background="@color/rl_surface_alt">
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:foregroundGravity="center">
 
-            <ImageButton
-                android:id="@+id/ptz_up"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="top|center_horizontal"
-                android:background="@android:color/transparent"
-                android:contentDescription="Up"
-                android:padding="8dp"
-                android:src="@drawable/ic_rl_chevron_right_24"
-                android:tint="@color/white"
-                android:rotation="-90" />
+            <FrameLayout
+                android:layout_width="248dp"
+                android:layout_height="248dp"
+                android:layout_gravity="center">
 
-            <ImageButton
-                android:id="@+id/ptz_down"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="bottom|center_horizontal"
-                android:background="@android:color/transparent"
-                android:contentDescription="Down"
-                android:padding="8dp"
-                android:src="@drawable/ic_rl_chevron_right_24"
-                android:tint="@color/white"
-                android:rotation="90" />
+                <View
+                    android:layout_width="248dp"
+                    android:layout_height="248dp"
+                    android:background="@drawable/bg_ptz_pad" />
 
-            <ImageButton
-                android:id="@+id/ptz_left"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="center_vertical|start"
-                android:background="@android:color/transparent"
-                android:contentDescription="Left"
-                android:padding="8dp"
-                android:src="@drawable/ic_rl_chevron_right_24"
-                android:tint="@color/white"
-                android:rotation="180" />
+                <com.reallive.android.ui.watch.ptz.PtzArcHighlightView
+                    android:id="@+id/ptz_edge_up"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:alpha="0" />
 
-            <ImageButton
-                android:id="@+id/ptz_right"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="center_vertical|end"
-                android:background="@android:color/transparent"
-                android:contentDescription="Right"
-                android:padding="8dp"
-                android:src="@drawable/ic_rl_chevron_right_24"
-                android:tint="@color/white" />
+                <com.reallive.android.ui.watch.ptz.PtzArcHighlightView
+                    android:id="@+id/ptz_edge_down"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:alpha="0" />
 
-            <View
-                android:id="@+id/ptz_stop"
-                android:layout_width="12dp"
-                android:layout_height="12dp"
-                android:layout_gravity="center"
-                android:background="@color/white" />
+                <com.reallive.android.ui.watch.ptz.PtzArcHighlightView
+                    android:id="@+id/ptz_edge_left"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:alpha="0" />
+
+                <com.reallive.android.ui.watch.ptz.PtzArcHighlightView
+                    android:id="@+id/ptz_edge_right"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:alpha="0" />
+
+                <View
+                    android:id="@+id/ptz_up"
+                    android:layout_width="match_parent"
+                    android:layout_height="124dp"
+                    android:background="@drawable/bg_ptz_sector_up" />
+
+                <View
+                    android:id="@+id/ptz_down"
+                    android:layout_width="match_parent"
+                    android:layout_height="124dp"
+                    android:layout_gravity="bottom"
+                    android:background="@drawable/bg_ptz_sector_down" />
+
+                <View
+                    android:id="@+id/ptz_left"
+                    android:layout_width="124dp"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_ptz_sector_left" />
+
+                <View
+                    android:id="@+id/ptz_right"
+                    android:layout_width="124dp"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="end"
+                    android:background="@drawable/bg_ptz_sector_right" />
+
+                <ImageView
+                    android:id="@+id/ptz_arrow_up"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:layout_gravity="top|center_horizontal"
+                    android:layout_marginTop="14dp"
+                    android:rotation="-90"
+                    android:src="@drawable/ic_rl_chevron_right_24"
+                    android:tint="#CCFFFFFF" />
+
+                <ImageView
+                    android:id="@+id/ptz_arrow_down"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:layout_gravity="bottom|center_horizontal"
+                    android:layout_marginBottom="14dp"
+                    android:rotation="90"
+                    android:src="@drawable/ic_rl_chevron_right_24"
+                    android:tint="#CCFFFFFF" />
+
+                <ImageView
+                    android:id="@+id/ptz_arrow_left"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:layout_gravity="center_vertical|start"
+                    android:layout_marginStart="14dp"
+                    android:rotation="180"
+                    android:src="@drawable/ic_rl_chevron_right_24"
+                    android:tint="#CCFFFFFF" />
+
+                <ImageView
+                    android:id="@+id/ptz_arrow_right"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:layout_gravity="center_vertical|end"
+                    android:layout_marginEnd="14dp"
+                    android:src="@drawable/ic_rl_chevron_right_24"
+                    android:tint="#CCFFFFFF" />
+
+                <View
+                    android:id="@+id/ptz_pad_touch_area"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@android:color/transparent" />
+
+                <FrameLayout
+                    android:id="@+id/ptz_stop"
+                    android:layout_width="58dp"
+                    android:layout_height="58dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_ptz_center_button">
+
+                    <View
+                        android:id="@+id/ptz_stop_dot"
+                        android:layout_width="10dp"
+                        android:layout_height="10dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_hist_seek_dot" />
+                </FrameLayout>
+            </FrameLayout>
         </FrameLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <ImageButton
-                android:id="@+id/ptz_zoom_out"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="@android:color/transparent"
-                android:contentDescription="Zoom out"
-                android:padding="6dp"
-                android:src="@drawable/ic_rl_remove_24"
-                android:tint="@color/white" />
+            <TextView
+                android:layout_width="52dp"
+                android:layout_height="wrap_content"
+                android:text="SPEED"
+                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                android:textColor="@color/auth_on_surface_variant" />
 
             <SeekBar
                 android:id="@+id/ptz_speed_seek"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
                 android:layout_weight="1"
-                android:max="9"
-                android:progress="3" />
+                android:max="4"
+                android:progress="3"
+                android:progressTint="@color/auth_primary"
+                android:splitTrack="false"
+                android:thumbTint="@color/auth_primary" />
 
-            <ImageButton
-                android:id="@+id/ptz_zoom_in"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="@android:color/transparent"
-                android:contentDescription="Zoom in"
-                android:padding="6dp"
-                android:src="@drawable/ic_rl_add_24"
-                android:tint="@color/white" />
+            <TextView
+                android:id="@+id/ptz_speed_value"
+                android:layout_width="32dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="4"
+                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                android:textColor="@color/white" />
         </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="14dp"
+            android:background="#22FFFFFF" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:gravity="center"
+            android:layout_marginTop="12dp"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
             <TextView
-                android:id="@+id/ptz_home"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:background="@color/rl_surface_alt"
-                android:gravity="center"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="Home"
-                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:layout_width="52dp"
+                android:layout_height="wrap_content"
+                android:text="ZOOM"
+                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                android:textColor="@color/auth_on_surface_variant" />
+
+            <ImageButton
+                android:id="@+id/ptz_zoom_out"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_live_control"
+                android:contentDescription="Zoom out"
+                android:padding="8dp"
+                android:src="@drawable/ic_rl_search_24"
+                android:tint="@color/white" />
+
+            <SeekBar
+                android:id="@+id/ptz_zoom_seek"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:max="100"
+                android:progress="50"
+                android:progressTint="@color/auth_primary"
+                android:splitTrack="false"
+                android:thumbTint="@color/auth_primary" />
+
+            <ImageButton
+                android:id="@+id/ptz_zoom_in"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:background="@drawable/bg_live_control"
+                android:contentDescription="Zoom in"
+                android:padding="8dp"
+                android:src="@drawable/ic_rl_search_24"
+                android:tint="@color/white" />
+
+            <TextView
+                android:id="@+id/ptz_zoom_value"
+                android:layout_width="44dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="50%"
+                android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
                 android:textColor="@color/white" />
-
-            <TextView
-                android:id="@+id/ptz_preset_door"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginStart="8dp"
-                android:background="@color/rl_surface"
-                android:gravity="center"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="Door"
-                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-                android:textColor="@color/auth_on_surface_variant" />
-
-            <TextView
-                android:id="@+id/ptz_preset_road"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginStart="8dp"
-                android:background="@color/rl_surface"
-                android:gravity="center"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="Road"
-                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-                android:textColor="@color/auth_on_surface_variant" />
-
-            <TextView
-                android:id="@+id/ptz_preset_garden"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginStart="8dp"
-                android:background="@color/rl_surface"
-                android:gravity="center"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="Garden"
-                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-                android:textColor="@color/auth_on_surface_variant" />
         </LinearLayout>
 
         <TextView
@@ -222,8 +343,9 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:gravity="center"
-            android:text="PTZ Ready"
-            android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+            android:text="PTZ Ready · Front Door"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
             android:textColor="@color/auth_on_surface_variant" />
     </LinearLayout>
-</FrameLayout>
+
+</LinearLayout>

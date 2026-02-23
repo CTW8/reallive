@@ -1883,6 +1883,7 @@ void Pipeline::videoLoop() {
     int64_t nextEncodeDueMs = 0;
     uint64_t lastSendDropForAdapt = 0;
     uint64_t lastCaptureDropForAdapt = 0;
+    uint64_t detectDispatchCounter = 0;
     bool autoNightVisionActive = false;
     auto lastAutoNightEval = Clock::now() - std::chrono::seconds(1);
     int activeEncWidth = std::max(2, config_.encoder.width);
@@ -2039,14 +2040,18 @@ void Pipeline::videoLoop() {
 
         const bool detectEnabled = runtimeMotionEnabled_.load() || runtimePersonEnabled_.load();
         if (config_.detection.enabled && detectEnabled) {
-            Frame frameForDetect = frame;
-            {
-                std::lock_guard<std::mutex> lock(detectMutex);
-                detectFrame = std::move(frameForDetect);
-                detectFrameTsMs = frameTsMs;
-                detectFrameReady = true;
+            const int dispatchEvery = std::max(1, config_.detection.intervalFrames);
+            detectDispatchCounter += 1;
+            if (detectDispatchCounter % static_cast<uint64_t>(dispatchEvery) == 0) {
+                Frame frameForDetect = frame;
+                {
+                    std::lock_guard<std::mutex> lock(detectMutex);
+                    detectFrame = std::move(frameForDetect);
+                    detectFrameTsMs = frameTsMs;
+                    detectFrameReady = true;
+                }
+                detectCv.notify_one();
             }
-            detectCv.notify_one();
 
             PersonBox person;
             {
@@ -2104,9 +2109,9 @@ void Pipeline::videoLoop() {
             applyNightVisionNv12(frame.data, frame.width, frame.height);
         }
 
-        if (runtimeWatermarkEnabled_.load()) {
-            TextOverlay::drawTimestamp(frame.data.data(), frame.width, frame.height);
-        }
+        // Keep timestamp overlay always visible on pushed stream.
+        // Runtime watermark switch should not hide core time evidence.
+        TextOverlay::drawTimestamp(frame.data.data(), frame.width, frame.height);
 
         // 3. Encode the frame
         Frame encodeFrame = frame;
