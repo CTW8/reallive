@@ -4,6 +4,7 @@ const authMiddleware = require('../middleware/auth');
 const config = require('../config');
 const db = require('../models/db');
 const User = require('../models/user');
+const AuthSession = require('../models/auth-session');
 const UserSettings = require('../models/user-settings');
 const Camera = require('../models/camera');
 const CameraSettings = require('../models/camera-settings');
@@ -17,6 +18,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     signature: '',
     language: 'English',
     timezone: 'UTC+08:00',
+    googleLinked: false,
+    googleEmail: '',
   },
   notifications: {
     email: true,
@@ -111,6 +114,8 @@ function buildSettingsPayload(user, stored) {
       signature: safeString(profileStored.signature, DEFAULT_SETTINGS.profile.signature),
       language: safeString(profileStored.language, DEFAULT_SETTINGS.profile.language),
       timezone: safeString(profileStored.timezone, DEFAULT_SETTINGS.profile.timezone),
+      googleLinked: Boolean(profileStored.googleLinked),
+      googleEmail: safeString(profileStored.googleEmail, DEFAULT_SETTINGS.profile.googleEmail),
     },
     notifications: { ...DEFAULT_SETTINGS.notifications, ...(stored?.notifications || {}) },
     system: { ...DEFAULT_SETTINGS.system, ...(stored?.system || {}) },
@@ -134,6 +139,7 @@ router.get('/', (req, res) => {
 router.put('/profile', (req, res) => {
   const user = User.findById(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
+  const current = UserSettings.getByUserId(req.user.id)?.profile || {};
 
   const displayName = safeString(req.body?.displayName);
   const email = safeString(req.body?.email).toLowerCase();
@@ -157,6 +163,10 @@ router.put('/profile', (req, res) => {
       signature: safeString(req.body?.signature),
       language: safeString(req.body?.language, DEFAULT_SETTINGS.profile.language),
       timezone: safeString(req.body?.timezone, DEFAULT_SETTINGS.profile.timezone),
+      googleLinked: req.body?.googleLinked == null ? Boolean(current.googleLinked) : req.body?.googleLinked === true,
+      googleEmail: req.body?.googleEmail == null
+        ? safeString(current.googleEmail, '')
+        : safeString(req.body?.googleEmail),
     },
   });
   pushAudit(req.user.id, 'Updated account profile', 'security');
@@ -242,8 +252,8 @@ router.post('/password', (req, res) => {
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'currentPassword and newPassword are required' });
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
   const user = User.findAuthById(req.user.id);
@@ -253,6 +263,7 @@ router.post('/password', (req, res) => {
 
   const passwordHash = bcrypt.hashSync(newPassword, config.bcryptRounds);
   User.updatePasswordById(req.user.id, passwordHash);
+  AuthSession.revokeByUserId(req.user.id);
   pushAudit(req.user.id, 'Changed account password', 'security');
   return res.json({ ok: true });
 });
@@ -288,8 +299,8 @@ router.post('/users', (req, res) => {
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'username, email, and password are required' });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
   if (User.findByUsername(username)) {
     return res.status(409).json({ error: 'Username already taken' });

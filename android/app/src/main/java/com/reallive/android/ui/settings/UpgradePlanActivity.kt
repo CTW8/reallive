@@ -17,6 +17,7 @@ import com.reallive.android.network.*
 import com.reallive.android.network.StorageCloudDto
 import com.reallive.android.network.StoragePlanDto
 import com.reallive.android.network.StoragePlansResponse
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.auth.LoginActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -42,7 +43,7 @@ class UpgradePlanActivity : AppCompatActivity() {
             finish()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         setContentView(R.layout.activity_upgrade_plan)
         findViewById<android.view.View>(R.id.upgrade_back).setOnClickListener { finish() }
         findViewById<View>(R.id.upgrade_plan_plus_card).visibility = View.GONE
@@ -73,7 +74,7 @@ class UpgradePlanActivity : AppCompatActivity() {
                 refreshPlanSelection()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    forceRelogin()
+                    if (recoverUnauthorized()) return@launch
                 } else {
                     Toast.makeText(this@UpgradePlanActivity, "加载套餐信息失败", Toast.LENGTH_SHORT).show()
                 }
@@ -226,8 +227,7 @@ class UpgradePlanActivity : AppCompatActivity() {
                 Toast.makeText(this@UpgradePlanActivity, "套餐已更新", Toast.LENGTH_SHORT).show()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    forceRelogin()
-                    return@launch
+                    if (recoverUnauthorized()) return@launch
                 }
                 Toast.makeText(this@UpgradePlanActivity, "套餐更新失败", Toast.LENGTH_SHORT).show()
             } finally {
@@ -258,6 +258,16 @@ class UpgradePlanActivity : AppCompatActivity() {
         appConfig.clearAuth()
         startActivity(Intent(this, LoginActivity::class.java))
         finish()
+    }
+
+    private suspend fun recoverUnauthorized(): Boolean {
+        val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+        if (valid) {
+            loadCloudConfig()
+            return true
+        }
+        forceRelogin()
+        return true
     }
 
     private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()

@@ -18,6 +18,15 @@ interface RealLiveApi {
     @POST("api/auth/forgot-password")
     suspend fun forgotPassword(@Body body: ForgotPasswordRequest): ForgotPasswordResponse
 
+    @POST("api/auth/refresh")
+    suspend fun refreshToken(@Body body: RefreshTokenRequest): AuthResponse
+
+    @POST("api/auth/logout")
+    suspend fun logout(): SessionRevokeResponse
+
+    @DELETE("api/auth/me")
+    suspend fun deleteMe(): SessionRevokeResponse
+
     @GET("api/cameras")
     suspend fun listCameras(): List<CameraDto>
 
@@ -72,6 +81,12 @@ interface RealLiveApi {
         @Body body: PtzControlRequest,
     ): PtzControlResponse
 
+    @POST("api/cameras/{id}/share-link")
+    suspend fun createShareLink(
+        @Path("id") cameraId: Long,
+        @Body body: Map<String, @JvmSuppressWildcards Any>,
+    ): ShareLinkResponse
+
     @GET("api/cameras/{id}/history/overview")
     suspend fun getHistoryOverview(@Path("id") cameraId: Long): HistoryOverviewDto
 
@@ -111,6 +126,15 @@ interface RealLiveApi {
 
     @POST("api/sessions/{id}/revoke")
     suspend fun revokeSession(@Path("id") sessionId: Long): SessionRevokeResponse
+
+    @GET("api/auth/sessions")
+    suspend fun listAuthSessions(): AuthSessionListResponse
+
+    @POST("api/auth/sessions/{id}/revoke")
+    suspend fun revokeAuthSession(@Path("id") sessionId: Long): SessionRevokeResponse
+
+    @POST("api/auth/sessions/revoke-others")
+    suspend fun revokeOtherAuthSessions(): SessionRevokeResponse
 
     @GET("api/alerts")
     suspend fun listAlertsPaged(

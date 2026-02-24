@@ -31,7 +31,7 @@ import android.os.SystemClock
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.HistorySegmentDto
 import com.reallive.android.network.HistoryThumbnailDto
 import com.reallive.android.network.StreamInfoDto
@@ -39,6 +39,7 @@ import com.reallive.player.Player
 import com.reallive.player.PlayerFactory
 import com.reallive.player.PlayerSurfaceView
 import com.reallive.android.ui.auth.LoginActivity
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.camera.CameraSettingsActivity
 import com.reallive.android.ui.dashboard.DashboardActivity
 import com.reallive.android.ui.history.HistoryActivity
@@ -75,6 +76,7 @@ class WatchActivity : AppCompatActivity() {
     private lateinit var controlsPanel: View
     private lateinit var videoContainer: View
     private lateinit var topBar: View
+    private lateinit var addSourceHint: TextView
     private lateinit var placeholderIcon: View
     private lateinit var nightOverlay: View
     private lateinit var watermarkText: TextView
@@ -93,6 +95,7 @@ class WatchActivity : AppCompatActivity() {
     private var telemetryPollActive: Boolean = false
     private var telemetrySource: String = "NONE"
     private var telemetryPollCount: Int = 0
+    private var authRecoverInProgress: Boolean = false
     private val telemetryPoller = Runnable { pollTelemetryTick() }
 
     private var cameraId: Long = -1
@@ -101,6 +104,7 @@ class WatchActivity : AppCompatActivity() {
     private var currentCameraSettings: com.reallive.android.network.CameraSettingsDetailDto? = null
     private var currentQualityProfile: String = "auto"
     private val qualityProfiles = listOf("auto", "360p", "540p", "720p", "1080p")
+    private var addSourceBannerConsumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,7 +113,7 @@ class WatchActivity : AppCompatActivity() {
             redirectToLogin()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         setContentView(R.layout.activity_watch)
 
         cameraId = intent.getLongExtra(EXTRA_CAMERA_ID, 1L)
@@ -138,6 +142,7 @@ class WatchActivity : AppCompatActivity() {
         controlsPanel = findViewById(R.id.watch_controls_panel)
         videoContainer = findViewById(R.id.watch_video_container)
         topBar = findViewById(R.id.watch_top_bar)
+        addSourceHint = findViewById(R.id.watch_add_source_hint)
         placeholderIcon = findViewById(R.id.watch_placeholder_icon)
         nightOverlay = findViewById(R.id.watch_night_overlay)
         watermarkText = findViewById(R.id.watch_watermark)
@@ -162,6 +167,7 @@ class WatchActivity : AppCompatActivity() {
         loadStream()
         loadTimeline()
         startTelemetryPolling()
+        showAddSourceBannerIfNeeded()
     }
 
     override fun onStop() {
@@ -196,7 +202,13 @@ class WatchActivity : AppCompatActivity() {
             )
         }
         findViewById<View>(R.id.btn_watch_capture).setOnClickListener {
-            captureSnapshot()
+            startActivity(
+                Intent(this, SnapshotGalleryActivity::class.java).apply {
+                    putExtra(SnapshotGalleryActivity.EXTRA_CAMERA_ID, cameraId)
+                    putExtra(SnapshotGalleryActivity.EXTRA_CAMERA_NAME, cameraName)
+                    putExtra(SnapshotGalleryActivity.EXTRA_STREAM_KEY, streamKey)
+                },
+            )
         }
         findViewById<View>(R.id.btn_watch_share).setOnClickListener {
             startActivity(
@@ -278,14 +290,36 @@ class WatchActivity : AppCompatActivity() {
                     placeholderIcon.visibility = View.GONE
                     player?.playLive(url)
                 }
-                watchSession = WatchSessionManager(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken), cameraId)
+                watchSession = WatchSessionManager(
+                    api = ApiFactory.createAuthorized(appConfig),
+                    cameraId = cameraId,
+                    onUnauthorized = {
+                        runOnUiThread { handleUnauthorizedForWatch() }
+                    },
+                )
                 watchSession?.start()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                    redirectToLogin()
+                    handleUnauthorizedForWatch()
                 }
             }
+        }
+    }
+
+    private fun handleUnauthorizedForWatch() {
+        if (authRecoverInProgress) return
+        authRecoverInProgress = true
+        lifecycleScope.launch {
+            val stillValid = withContext(Dispatchers.IO) {
+                AuthGuard.isSessionValid(appConfig)
+            }
+            authRecoverInProgress = false
+            if (stillValid) {
+                loadStream()
+                return@launch
+            }
+            appConfig.clearAuth()
+            redirectToLogin()
         }
     }
 
@@ -693,6 +727,28 @@ class WatchActivity : AppCompatActivity() {
         volumeLabel.text = if (zh) "声音" else "Volume"
     }
 
+    private fun showAddSourceBannerIfNeeded() {
+        if (addSourceBannerConsumed) return
+        val source = intent.getStringExtra(EXTRA_ADD_SOURCE).orEmpty().trim().lowercase(Locale.US)
+        if (source.isBlank()) return
+        if (appConfig.isAddSourceHintShown(cameraId)) return
+        val text = when (source) {
+            "scan" -> tr("Added from QR Scan", "来自二维码添加")
+            "nearby" -> tr("Added from Nearby Device", "来自附近设备添加")
+            else -> tr("Added manually", "来自手动添加")
+        }
+        addSourceBannerConsumed = true
+        appConfig.markAddSourceHintShown(cameraId)
+        addSourceHint.text = text
+        addSourceHint.visibility = View.VISIBLE
+        addSourceHint.removeCallbacks(hideAddSourceBannerRunnable)
+        addSourceHint.postDelayed(hideAddSourceBannerRunnable, 3200L)
+    }
+
+    private val hideAddSourceBannerRunnable = Runnable {
+        addSourceHint.visibility = View.GONE
+    }
+
     private fun isChineseLanguage(languageCode: String?): Boolean {
         if (languageCode.isNullOrBlank()) return false
         val normalized = languageCode.lowercase(Locale.US)
@@ -815,5 +871,6 @@ class WatchActivity : AppCompatActivity() {
         const val EXTRA_CAMERA_ID = "extra_camera_id"
         const val EXTRA_CAMERA_NAME = "extra_camera_name"
         const val EXTRA_STREAM_KEY = "extra_stream_key"
+        const val EXTRA_ADD_SOURCE = "extra_add_source"
     }
 }

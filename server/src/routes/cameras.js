@@ -1,5 +1,6 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const authMiddleware = require('../middleware/auth');
 const Camera = require('../models/camera');
 const CameraSettings = require('../models/camera-settings');
@@ -77,6 +78,28 @@ function levelTarget(level) {
   }
 }
 
+function encodeBase64Url(input) {
+  return Buffer.from(input).toString('base64url');
+}
+
+function buildShareToken(payload) {
+  const body = encodeBase64Url(JSON.stringify(payload));
+  const sig = crypto
+    .createHmac('sha256', config.jwtSecret || 'reallive-share')
+    .update(body)
+    .digest('base64url');
+  return `${body}.${sig}`;
+}
+
+function clampTtlSec(ttlSec) {
+  const min = Math.max(1, Number(config?.shareLinks?.minTtlSec || 60));
+  const max = Math.max(min, Number(config?.shareLinks?.maxTtlSec || 30 * 24 * 60 * 60));
+  const safe = Number.isFinite(Number(ttlSec)) ? Number(ttlSec) : 0;
+  if (!safe || safe < min) return min;
+  if (safe > max) return max;
+  return Math.floor(safe);
+}
+
 function buildEffectiveProfile(settings, device) {
   const profileOption = String(device?.streamProfile || device?.stream_profile || settings?.stream_profile || 'auto').toLowerCase();
   if (device) {
@@ -145,7 +168,18 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Camera name is required' });
   }
 
-  const streamKey = uuidv4();
+  const streamKeyRaw = String(req.body?.streamKey || '').trim();
+  const streamKey = streamKeyRaw || uuidv4();
+  if (!/^[a-zA-Z0-9._-]{8,128}$/.test(streamKey)) {
+    return res.status(400).json({ error: 'Invalid streamKey format' });
+  }
+  const exists = Camera.findByStreamKey(streamKey);
+  if (exists) {
+    if (Number(exists.user_id) === Number(req.user.id)) {
+      return res.status(409).json({ error: 'Stream key already exists in your account', cameraId: exists.id });
+    }
+    return res.status(409).json({ error: 'Stream key already in use' });
+  }
   const camera = Camera.create(req.user.id, name, streamKey, resolution);
   res.status(201).json({
     ...camera,
@@ -234,6 +268,57 @@ router.get('/:id/stream', (req, res) => {
     device: device || null,
     effective_profile: effectiveProfile,
     liveDemand,
+  });
+});
+
+// POST /api/cameras/:id/share-link
+router.post('/:id/share-link', (req, res) => {
+  const camera = Camera.findById(req.params.id);
+  if (!camera) {
+    return res.status(404).json({ error: 'Camera not found' });
+  }
+  if (camera.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const modeRaw = String(req.body?.mode || 'view').trim().toLowerCase();
+  const mode = modeRaw === '24h' ? '24h' : 'view';
+  const oneTime = !!req.body?.oneTime;
+  const requestedTtl = Number(req.body?.ttlSec || 0);
+  const now = Date.now();
+  const defaultTtl = mode === '24h'
+    ? Number(config?.shareLinks?.default24hTtlSec || 24 * 60 * 60)
+    : Number(config?.shareLinks?.defaultViewTtlSec || 7 * 24 * 60 * 60);
+  const ttlSec = clampTtlSec(requestedTtl > 0 ? requestedTtl : defaultTtl);
+  const expiresAt = now + ttlSec * 1000;
+  const jti = uuidv4();
+  const token = buildShareToken({
+    v: 1,
+    uid: req.user.id,
+    cid: camera.id,
+    stream_key: camera.stream_key,
+    mode,
+    one_time: oneTime,
+    jti,
+    exp: expiresAt,
+    iat: now,
+  });
+  const hostHeader = req.get('x-forwarded-host') || req.get('host') || req.hostname || 'localhost';
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+  const safeProto = proto === 'https' ? 'https' : 'http';
+  const flvUrl = `${safeProto}://${hostHeader}/share/live/${camera.stream_key}.flv?st=${encodeURIComponent(token)}`;
+
+  return res.json({
+    ok: true,
+    mode,
+    oneTime,
+    ttlSec,
+    cameraId: camera.id,
+    streamKey: camera.stream_key,
+    expiresAt,
+    jti,
+    token,
+    url: flvUrl,
   });
 });
 

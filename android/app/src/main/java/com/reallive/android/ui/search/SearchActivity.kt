@@ -19,9 +19,10 @@ import androidx.recyclerview.widget.RecyclerView
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.AlertDto
 import com.reallive.android.network.CameraDto
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.auth.LoginActivity
 import com.reallive.android.ui.watch.WatchActivity
 import kotlinx.coroutines.Dispatchers
@@ -57,7 +58,7 @@ class SearchActivity : AppCompatActivity() {
             redirectToLogin()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         setContentView(R.layout.activity_search)
 
         emptyState = findViewById(R.id.search_empty_state)
@@ -97,8 +98,13 @@ class SearchActivity : AppCompatActivity() {
                 applyFilter()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                    redirectToLogin()
+                    val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+                    if (!valid) {
+                        appConfig.clearAuth()
+                        redirectToLogin()
+                    } else {
+                        loadCameras()
+                    }
                 }
             }
         }

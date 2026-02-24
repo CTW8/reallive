@@ -21,7 +21,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.HistorySegmentDto
 import com.reallive.android.network.HistoryThumbnailDto
 import com.reallive.android.network.HistoryTimelineEventDto
@@ -31,6 +31,7 @@ import com.reallive.player.Player
 import com.reallive.player.PlayerFactory
 import com.reallive.player.PlayerSurfaceView
 import com.reallive.android.ui.auth.LoginActivity
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.watch.CalendarPickerActivity
 import com.reallive.android.ui.watch.EventDetailActivity
 import com.reallive.android.ui.watch.TimelineEventAdapter
@@ -204,7 +205,7 @@ class HistoryActivity : AppCompatActivity() {
             redirectToLogin()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         setContentView(R.layout.activity_history)
 
         findViewById<android.view.View>(R.id.history_back).setOnClickListener {
@@ -350,8 +351,11 @@ class HistoryActivity : AppCompatActivity() {
                 }
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                    redirectToLogin()
+                    val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+                    if (!valid) {
+                        appConfig.clearAuth()
+                        redirectToLogin()
+                    }
                 }
             }
         }
@@ -427,8 +431,11 @@ class HistoryActivity : AppCompatActivity() {
                 isPlaybackRunning = false
                 updatePlayPauseUi()
                 if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                    redirectToLogin()
+                    val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+                    if (!valid) {
+                        appConfig.clearAuth()
+                        redirectToLogin()
+                    }
                 }
             }
         }

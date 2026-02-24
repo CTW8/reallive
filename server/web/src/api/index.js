@@ -1,10 +1,62 @@
 const BASE_URL = '/api'
+let onAuthFailed = null
+let refreshInFlight = null
 
 function getToken() {
   return localStorage.getItem('token')
 }
 
-async function request(path, options = {}) {
+function getRefreshToken() {
+  return localStorage.getItem('refreshToken')
+}
+
+function setAuthData(data = {}) {
+  if (data.token) localStorage.setItem('token', data.token)
+  if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
+  if (data.user) localStorage.setItem('user', JSON.stringify(data.user))
+}
+
+function clearAuthData() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('refreshToken')
+  localStorage.removeItem('user')
+}
+
+export function setAuthFailureHandler(handler) {
+  onAuthFailed = typeof handler === 'function' ? handler : null
+}
+
+async function tryRefreshToken() {
+  if (refreshInFlight) return refreshInFlight
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) return { ok: false, reason: 'invalid' }
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+      if (!res.ok) {
+        if (res.status === 400 || res.status === 401 || res.status === 403) {
+          return { ok: false, reason: 'invalid' }
+        }
+        return { ok: false, reason: 'transient' }
+      }
+      const data = await res.json()
+      if (!data?.token) return { ok: false, reason: 'transient' }
+      setAuthData(data)
+      return { ok: true, reason: 'none' }
+    } catch {
+      return { ok: false, reason: 'transient' }
+    }
+  })().finally(() => {
+    refreshInFlight = null
+  })
+  return refreshInFlight
+}
+
+async function request(path, options = {}, retried = false) {
   const headers = { 'Content-Type': 'application/json', ...options.headers }
   const token = getToken()
   if (token) {
@@ -32,8 +84,19 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     if (res.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
+      if (!retried) {
+        const refreshResult = await tryRefreshToken()
+        if (refreshResult?.ok) {
+          return request(path, options, true)
+        }
+        if (refreshResult?.reason !== 'invalid') {
+          const err = new Error(data?.error || 'Temporary auth refresh failure')
+          err.status = 401
+          throw err
+        }
+      }
+      clearAuthData()
+      if (onAuthFailed) onAuthFailed()
     }
     const err = new Error(data?.error || `Request failed: ${res.status}`)
     err.status = res.status
@@ -53,6 +116,12 @@ export const authApi = {
     return request('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ username, email, password }),
+    })
+  },
+  logout() {
+    return request('/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({}),
     })
   },
   forgotPassword(email) {
@@ -160,6 +229,24 @@ export const sessionApi = {
   },
   revoke(id) {
     return request(`/sessions/${id}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  },
+}
+
+export const authSessionApi = {
+  list() {
+    return request('/auth/sessions')
+  },
+  revoke(id) {
+    return request(`/auth/sessions/${id}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  },
+  revokeOthers() {
+    return request('/auth/sessions/revoke-others', {
       method: 'POST',
       body: JSON.stringify({}),
     })

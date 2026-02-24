@@ -12,7 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.ui.dashboard.DashboardActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,7 +45,7 @@ class LoginActivity : AppCompatActivity() {
         setContentView(R.layout.activity_login)
 
         appConfig = AppConfig(this)
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         forceReauth = intent.getBooleanExtra(EXTRA_FORCE_REAUTH, false)
         if (!forceReauth && !appConfig.getToken().isNullOrBlank()) {
             startActivity(Intent(this, DashboardActivity::class.java))
@@ -118,7 +118,7 @@ class LoginActivity : AppCompatActivity() {
                 val response = withContext(Dispatchers.IO) {
                     repository.login(username = username, password = password)
                 }
-                appConfig.setToken(response.token)
+                appConfig.setAuthTokens(response.token, response.refreshToken)
                 appConfig.setUserId(response.user.id)
                 appConfig.setUsername(response.user.username)
                 appConfig.setEmail(response.user.email)
@@ -150,11 +150,10 @@ class LoginActivity : AppCompatActivity() {
         val error = when {
             identifier.isBlank() -> tr("Email or username is required.", "请输入邮箱或用户名。")
             password.isBlank() -> tr("Password is required.", "请输入密码。")
-            password.length < 6 -> tr("Password must be at least 6 characters.", "密码至少需要 6 位。")
             else -> null
         }
         val emailError = identifier.isBlank()
-        val passwordError = password.isBlank() || password.length < 6
+        val passwordError = password.isBlank()
         updateFieldState(emailContainer, emailError && (showErrors || hasAttemptedSubmit))
         updateFieldState(passwordContainer, passwordError && (showErrors || hasAttemptedSubmit))
         if (showErrors || hasAttemptedSubmit) {

@@ -1,5 +1,5 @@
-const jwt = require('jsonwebtoken');
-const config = require('../config');
+const AuthSession = require('../models/auth-session');
+const { verifyToken } = require('../services/auth-token-service');
 const Camera = require('../models/camera');
 const Session = require('../models/session');
 const { getLatestThumbnail } = require('../services/historyService');
@@ -30,8 +30,16 @@ function initSignaling(io) {
       return next(new Error('Authentication required'));
     }
     try {
-      const payload = jwt.verify(token, config.jwtSecret);
-      socket.user = { id: payload.id, username: payload.username };
+      const payload = verifyToken(token);
+      if (payload?.typ !== 'access' || !payload?.sid || !payload?.id) {
+        return next(new Error('Invalid token'));
+      }
+      const session = AuthSession.findById(Number(payload.sid));
+      if (!AuthSession.isActive(session)) {
+        return next(new Error('Session expired'));
+      }
+      socket.user = { id: payload.id, username: payload.username, sessionId: Number(payload.sid) };
+      AuthSession.touch(Number(payload.sid), socket.handshake.address || '', socket.handshake.headers?.['user-agent'] || '');
       next();
     } catch (err) {
       next(new Error('Invalid token'));

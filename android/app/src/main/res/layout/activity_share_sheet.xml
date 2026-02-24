@@ -331,5 +331,62 @@
                 android:drawableTint="@color/auth_primary"
                 android:drawablePadding="6dp" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/share_ttl_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Link expiry"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <RadioGroup
+            android:id="@+id/share_ttl_group"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/share_ttl_1h"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1h"
+                android:textColor="?attr/colorOnSurface" />
+
+            <RadioButton
+                android:id="@+id/share_ttl_24h"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="24h"
+                android:textColor="?attr/colorOnSurface" />
+
+            <RadioButton
+                android:id="@+id/share_ttl_7d"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="7d"
+                android:textColor="?attr/colorOnSurface" />
+
+            <RadioButton
+                android:id="@+id/share_ttl_30d"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="30d"
+                android:textColor="?attr/colorOnSurface" />
+        </RadioGroup>
+
+        <CheckBox
+            android:id="@+id/share_one_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="One-time link"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+            android:textColor="?attr/colorOnSurface" />
     </LinearLayout>
 </FrameLayout>

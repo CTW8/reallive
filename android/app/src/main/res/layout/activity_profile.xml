@@ -112,6 +112,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/profile_plan_card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@drawable/bg_settings_card"
@@ -181,6 +182,7 @@
                 android:paddingTop="6dp">
 
                 <LinearLayout
+                    android:id="@+id/profile_row_name"
                     android:layout_width="match_parent"
                     android:layout_height="54dp"
                     android:gravity="center_vertical"
@@ -224,6 +226,7 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/profile_row_email"
                     android:layout_width="match_parent"
                     android:layout_height="54dp"
                     android:gravity="center_vertical"
@@ -251,6 +254,7 @@
                             android:textColor="?attr/colorOnSurface" />
 
                         <TextView
+                            android:id="@+id/profile_account_email_value"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="alex@example.com"
@@ -266,6 +270,7 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/profile_row_phone"
                     android:layout_width="match_parent"
                     android:layout_height="54dp"
                     android:gravity="center_vertical"
@@ -293,6 +298,7 @@
                             android:textColor="?attr/colorOnSurface" />
 
                         <TextView
+                            android:id="@+id/profile_account_phone_value"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="+86 138 0000 0000"
@@ -308,6 +314,7 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/profile_row_password"
                     android:layout_width="match_parent"
                     android:layout_height="54dp"
                     android:gravity="center_vertical"
@@ -367,6 +374,7 @@
                 android:paddingTop="6dp">
 
                 <LinearLayout
+                    android:id="@+id/profile_row_google"
                     android:layout_width="match_parent"
                     android:layout_height="54dp"
                     android:gravity="center_vertical"
@@ -396,9 +404,10 @@
                             android:textColor="?attr/colorOnSurface" />
 
                         <TextView
+                            android:id="@+id/profile_google_email"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="alex.chen@gmail.com"
+                            android:text="-"
                             android:textAppearance="@style/TextAppearance.Material3.BodySmall"
                             android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
@@ -413,6 +422,7 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/profile_row_bio"
                     android:layout_width="match_parent"
                     android:layout_height="54dp"
                     android:gravity="center_vertical"

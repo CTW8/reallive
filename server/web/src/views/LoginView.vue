@@ -17,7 +17,7 @@ const resetOpen = ref(false)
 const resetEmail = ref('')
 const resetLoading = ref(false)
 const resetError = ref('')
-const tempPassword = ref('')
+const resetMessage = ref('')
 
 async function handleLogin() {
   error.value = ''
@@ -34,23 +34,15 @@ async function handleLogin() {
 
 async function handleForgotPassword() {
   resetError.value = ''
-  tempPassword.value = ''
+  resetMessage.value = ''
   resetLoading.value = true
   try {
     const data = await authApi.forgotPassword(resetEmail.value)
-    tempPassword.value = data?.temporaryPassword || ''
+    resetMessage.value = data?.message || 'If the email exists, reset instructions have been sent.'
   } catch (err) {
     resetError.value = err?.message || 'Failed to reset password'
   } finally {
     resetLoading.value = false
-  }
-}
-
-async function copyTempPassword() {
-  if (!tempPassword.value) return
-  try {
-    await navigator.clipboard.writeText(tempPassword.value)
-  } catch {
   }
 }
 </script>
@@ -151,13 +143,9 @@ async function copyTempPassword() {
             required
           >
           <p v-if="resetError" class="reset-error">{{ resetError }}</p>
-          <div v-if="tempPassword" class="reset-result">
-            <p>Temporary password:</p>
-            <code>{{ tempPassword }}</code>
-            <button type="button" class="copy-btn" @click="copyTempPassword">Copy</button>
-          </div>
+          <p v-if="resetMessage" class="reset-ok">{{ resetMessage }}</p>
           <button class="btn-primary" type="submit" :disabled="resetLoading">
-            {{ resetLoading ? 'Generating...' : 'Generate Temporary Password' }}
+            {{ resetLoading ? 'Sending...' : 'Send Reset Instructions' }}
           </button>
         </form>
       </div>
@@ -466,6 +454,15 @@ async function copyTempPassword() {
 
 .reset-error {
   color: #ffb4b4;
+  font: 400 12px/16px 'Roboto', sans-serif;
+}
+
+.reset-ok {
+  border: 1px solid rgba(125,216,129,.4);
+  background: rgba(125,216,129,.1);
+  border-radius: var(--r2);
+  padding: 10px;
+  color: #bbf7d0;
   font: 400 12px/16px 'Roboto', sans-serif;
 }
 

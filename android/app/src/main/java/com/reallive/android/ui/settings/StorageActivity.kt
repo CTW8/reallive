@@ -11,8 +11,9 @@ import androidx.lifecycle.lifecycleScope
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.StorageDeviceDto
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.auth.LoginActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -31,7 +32,7 @@ class StorageActivity : AppCompatActivity() {
             finish()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
 
         setContentView(R.layout.activity_storage)
         applyLocalizedTexts()
@@ -60,9 +61,14 @@ class StorageActivity : AppCompatActivity() {
                 bindDevices(devices)
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                    startActivity(Intent(this@StorageActivity, LoginActivity::class.java))
-                    finish()
+                    val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+                    if (!valid) {
+                        appConfig.clearAuth()
+                        startActivity(Intent(this@StorageActivity, LoginActivity::class.java))
+                        finish()
+                    } else {
+                        loadStorage()
+                    }
                 } else {
                     Toast.makeText(this@StorageActivity, "加载存储信息失败", Toast.LENGTH_SHORT).show()
                 }

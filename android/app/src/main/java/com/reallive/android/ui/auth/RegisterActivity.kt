@@ -12,7 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.ui.dashboard.DashboardActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -46,7 +46,7 @@ class RegisterActivity : AppCompatActivity() {
         setContentView(R.layout.activity_register)
 
         appConfig = AppConfig(this)
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         if (!appConfig.getToken().isNullOrBlank()) {
             startActivity(Intent(this, DashboardActivity::class.java))
             finish()
@@ -137,10 +137,11 @@ class RegisterActivity : AppCompatActivity() {
                 val response = withContext(Dispatchers.IO) {
                     repository.register(username = username, email = email, password = password)
                 }
-                appConfig.setToken(response.token)
+                appConfig.setAuthTokens(response.token, response.refreshToken)
                 appConfig.setUserId(response.user.id)
                 appConfig.setUsername(response.user.username)
                 appConfig.setEmail(response.user.email)
+                appConfig.markAuthenticated()
                 startActivity(Intent(this@RegisterActivity, DashboardActivity::class.java))
                 finish()
             } catch (ex: Exception) {

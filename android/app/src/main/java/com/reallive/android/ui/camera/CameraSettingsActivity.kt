@@ -14,10 +14,11 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.CameraSettingsDetailDto
 import com.reallive.android.network.CameraSettingsResponse
 import com.reallive.android.ui.auth.LoginActivity
+import com.reallive.android.ui.auth.AuthGuard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,7 +42,7 @@ class CameraSettingsActivity : AppCompatActivity() {
             finish()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         cameraName = intent.getStringExtra(EXTRA_CAMERA_NAME) ?: if (zh()) "摄像头" else "Camera"
         cameraId = intent.getLongExtra(EXTRA_CAMERA_ID, -1L)
         if (cameraId <= 0L) {
@@ -507,11 +508,7 @@ class CameraSettingsActivity : AppCompatActivity() {
                         withContext(Dispatchers.IO) { repository.deleteCamera(cameraId) }
                         finish()
                     } catch (ex: Exception) {
-                        if (ex is HttpException && ex.code() == 401) {
-                            appConfig.clearAuth()
-                            startActivity(Intent(this@CameraSettingsActivity, LoginActivity::class.java))
-                            finish()
-                        } else {
+                        if (!handleAuth(ex)) {
                             Toast.makeText(this@CameraSettingsActivity, tr("Remove failed", "删除失败"), Toast.LENGTH_SHORT).show()
                         }
                     }
@@ -623,8 +620,13 @@ class CameraSettingsActivity : AppCompatActivity() {
         return if (profile == "auto") tr("Auto", "自动") else profile
     }
 
-    private fun handleAuth(ex: Exception): Boolean {
+    private suspend fun handleAuth(ex: Exception): Boolean {
         if (ex is HttpException && ex.code() == 401) {
+            val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+            if (valid) {
+                loadSettings()
+                return true
+            }
             appConfig.clearAuth()
             startActivity(Intent(this, LoginActivity::class.java))
             finish()

@@ -9,7 +9,7 @@ const CONFIG_PATH = process.env.SERVER_CONFIG_PATH || DEFAULT_CONFIG_PATH;
 const defaults = {
   port: 3000,
   jwtSecret: 'reallive-dev-secret-change-in-production',
-  jwtExpiresIn: '24h',
+  jwtExpiresIn: '30d',
   bcryptRounds: 12,
   dbPath: path.join(SERVER_ROOT, 'data', 'reallive.db'),
   srsApi: 'http://localhost:1985',
@@ -21,6 +21,12 @@ const defaults = {
     pushTemplate: 'rtmp://{host}:1935/live/{streamKey}',
     pullFlvTemplate: '{proto}://{httpHost}/live/{streamKey}.flv',
     pullHlsTemplate: '{proto}://{httpHost}/live/{streamKey}.m3u8',
+  },
+  shareLinks: {
+    defaultViewTtlSec: 7 * 24 * 60 * 60,
+    default24hTtlSec: 24 * 60 * 60,
+    minTtlSec: 60,
+    maxTtlSec: 30 * 24 * 60 * 60,
   },
   recordings: {
     roots: [
@@ -73,6 +79,10 @@ const mergedRecordings = {
   ...defaults.recordings,
   ...(fileConfig.recordings || {}),
 };
+const mergedShareLinks = {
+  ...defaults.shareLinks,
+  ...(fileConfig.shareLinks || {}),
+};
 const mergedMqttControl = {
   ...defaults.mqttControl,
   ...(fileConfig.mqttControl || {}),
@@ -84,11 +94,13 @@ const config = {
   edgeReplay: mergedEdgeReplay,
   streamUrls: mergedStreamUrls,
   recordings: mergedRecordings,
+  shareLinks: mergedShareLinks,
   mqttControl: mergedMqttControl,
 };
 
 if (process.env.PORT) config.port = toNumber(process.env.PORT, config.port);
 if (process.env.JWT_SECRET) config.jwtSecret = process.env.JWT_SECRET;
+if (process.env.JWT_EXPIRES_IN) config.jwtExpiresIn = process.env.JWT_EXPIRES_IN;
 if (process.env.DB_PATH) config.dbPath = process.env.DB_PATH;
 if (process.env.SRS_API) config.srsApi = process.env.SRS_API;
 if (process.env.EDGE_REPLAY_URL) config.edgeReplay.url = process.env.EDGE_REPLAY_URL;

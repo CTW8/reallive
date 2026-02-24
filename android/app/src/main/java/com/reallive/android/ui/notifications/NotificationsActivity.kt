@@ -23,9 +23,10 @@ import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.AlertDto
 import com.reallive.android.ui.common.MainTabNavigation
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.auth.LoginActivity
 import com.reallive.android.ui.watch.EventDetailActivity
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +68,7 @@ class NotificationsActivity : AppCompatActivity() {
             redirectToLogin()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         setContentView(R.layout.activity_notifications)
         restoreFilters()
         pageTitleText = findViewById(R.id.notifications_page_title)
@@ -170,8 +171,11 @@ class NotificationsActivity : AppCompatActivity() {
                 updateFilterChips()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                    redirectToLogin()
+                    val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+                    if (!valid) {
+                        appConfig.clearAuth()
+                        redirectToLogin()
+                    }
                     return@launch
                 }
                 emptyText.visibility = View.VISIBLE

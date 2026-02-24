@@ -123,6 +123,22 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS auth_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    refresh_token_hash TEXT NOT NULL UNIQUE,
+    device_name TEXT DEFAULT '',
+    platform TEXT DEFAULT '',
+    app_version TEXT DEFAULT '',
+    ip_address TEXT DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    revoked_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
 `);
 
 function ensureColumn(table, column, definition) {
@@ -142,5 +158,10 @@ ensureColumn('camera_settings', 'auto_policy', "TEXT DEFAULT 'balanced'");
 ensureColumn('camera_settings', 'auto_cooldown_sec', 'INTEGER DEFAULT 10');
 ensureColumn('camera_settings', 'auto_up_hold_sec', 'INTEGER DEFAULT 25');
 ensureColumn('camera_settings', 'auto_down_hold_sec', 'INTEGER DEFAULT 3');
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions(expires_at);
+`);
 
 module.exports = db;

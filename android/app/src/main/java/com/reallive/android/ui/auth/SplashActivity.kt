@@ -6,9 +6,13 @@ import android.view.View
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.os.LocaleListCompat
+import androidx.lifecycle.lifecycleScope
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.ui.dashboard.DashboardActivity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SplashActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,11 +30,22 @@ class SplashActivity : AppCompatActivity() {
                         putExtra(LoginActivity.EXTRA_FORCE_REAUTH, true)
                     },
                 )
-            } else {
-                appConfig.markAuthenticated()
-                startActivity(Intent(this, DashboardActivity::class.java))
+                finish()
+                return
             }
-            finish()
+            lifecycleScope.launch {
+                val authValid = withContext(Dispatchers.IO) {
+                    AuthGuard.isSessionValid(appConfig)
+                }
+                if (authValid) {
+                    appConfig.markAuthenticated()
+                    startActivity(Intent(this@SplashActivity, DashboardActivity::class.java))
+                } else {
+                    appConfig.clearAuth()
+                    startActivity(Intent(this@SplashActivity, LoginActivity::class.java))
+                }
+                finish()
+            }
             return
         }
 

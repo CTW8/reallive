@@ -7,6 +7,8 @@
 - 架构：`architecture.md`
 - 当前实现快照：`system-understanding.md`
 - 运维手册：`manual.md`
+- 登录与会话回归：`auth-session-regression-checklist.md`
+- 登录与会话回归报告模板：`auth-session-regression-report-template.md`
 
 ## 1. 测试目标
 

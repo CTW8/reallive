@@ -16,9 +16,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.CameraDto
 import com.reallive.android.ui.auth.LoginActivity
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.camera.AddCameraActivity
 import com.reallive.android.ui.camera.CameraListActivity
 import com.reallive.android.ui.camera.CameraSettingsActivity
@@ -54,7 +55,7 @@ class DashboardActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appConfig = AppConfig(this)
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         if (appConfig.getToken().isNullOrBlank()) {
             redirectToLogin()
             return
@@ -252,8 +253,13 @@ class DashboardActivity : AppCompatActivity() {
                 renderCameras()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                    redirectToLogin()
+                    val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+                    if (valid) {
+                        loadDashboard()
+                    } else {
+                        appConfig.clearAuth()
+                        redirectToLogin()
+                    }
                 } else {
                     subtitleText.text = if (zh) "同步仪表盘失败" else "Unable to sync dashboard"
                 }

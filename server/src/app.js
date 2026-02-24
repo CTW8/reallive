@@ -1,8 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const crypto = require('crypto');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const { RECORDINGS_ROOTS } = require('./services/historyService');
+const config = require('./config');
 
 const authRoutes = require('./routes/auth');
 const cameraRoutes = require('./routes/cameras');
@@ -19,12 +21,93 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+function timingSafeEqualString(a, b) {
+  const aa = Buffer.from(String(a || ''));
+  const bb = Buffer.from(String(b || ''));
+  if (aa.length !== bb.length) return false;
+  return crypto.timingSafeEqual(aa, bb);
+}
+
+const consumedShareTokenByJti = new Map();
+
+function cleanupConsumedShareTokens(nowMs = Date.now()) {
+  if (consumedShareTokenByJti.size <= 0) return;
+  for (const [jti, expiresAt] of consumedShareTokenByJti.entries()) {
+    if (!expiresAt || expiresAt <= nowMs) consumedShareTokenByJti.delete(jti);
+  }
+}
+
+function verifyShareToken(st, expectedStreamKey) {
+  if (!st || typeof st !== 'string') return { ok: false, code: 400, error: 'Missing share token' };
+  const parts = st.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    return { ok: false, code: 400, error: 'Invalid share token format' };
+  }
+
+  const [body, sig] = parts;
+  const expectedSig = crypto
+    .createHmac('sha256', config.jwtSecret || 'reallive-share')
+    .update(body)
+    .digest('base64url');
+
+  if (!timingSafeEqualString(sig, expectedSig)) {
+    return { ok: false, code: 403, error: 'Invalid share token signature' };
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  } catch (_err) {
+    return { ok: false, code: 400, error: 'Malformed share token payload' };
+  }
+
+  const exp = Number(payload?.exp || 0);
+  const tokenStreamKey = String(payload?.stream_key || '');
+  const oneTime = !!payload?.one_time;
+  const jti = String(payload?.jti || '');
+  if (!exp || exp <= Date.now()) {
+    return { ok: false, code: 403, error: 'Share link expired' };
+  }
+  if (!tokenStreamKey || tokenStreamKey !== expectedStreamKey) {
+    return { ok: false, code: 403, error: 'Share token stream mismatch' };
+  }
+  if (oneTime) {
+    if (!jti) return { ok: false, code: 403, error: 'Invalid one-time token' };
+    cleanupConsumedShareTokens(Date.now());
+    if (consumedShareTokenByJti.has(jti)) {
+      return { ok: false, code: 403, error: 'One-time share token already used' };
+    }
+    consumedShareTokenByJti.set(jti, exp);
+  }
+
+  return { ok: true, payload };
+}
+
 // Proxy FLV streams to SRS
 // Use pathFilter instead of app.use('/live', ...) to preserve the full URL path.
 // Express mount strips the prefix, causing SRS to receive /xxx.flv instead of /live/xxx.flv.
+app.use('/share/live', (req, res, next) => {
+  const rawPath = String(req.path || '');
+  const streamWithExt = rawPath.replace(/^\/+/, '').split('/')[0] || '';
+  const streamKey = streamWithExt.replace(/\.(flv|m3u8)$/i, '');
+  if (!streamKey) {
+    return res.status(400).json({ error: 'Missing stream key' });
+  }
+  const st = String(req.query?.st || '');
+  const verified = verifyShareToken(st, streamKey);
+  if (!verified.ok) {
+    return res.status(verified.code || 403).json({ error: verified.error || 'Forbidden' });
+  }
+  return next();
+});
+
 app.use(createProxyMiddleware({
   target: 'http://localhost:8080',
-  pathFilter: (pathname) => pathname.startsWith('/live/') || pathname.startsWith('/history/'),
+  pathFilter: (pathname) =>
+    pathname.startsWith('/live/') ||
+    pathname.startsWith('/history/') ||
+    pathname.startsWith('/share/live/'),
+  pathRewrite: (path) => (path.startsWith('/share/live/') ? path.replace('/share/live/', '/live/') : path),
   changeOrigin: true,
   // Disable proxy timeout for long-lived HTTP-FLV streaming connections
   timeout: 0,

@@ -9,20 +9,26 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.ScrollView
 import android.content.Intent
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.SettingsResponse
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.auth.LoginActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import retrofit2.HttpException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 class SecurityActivity : AppCompatActivity() {
     private lateinit var appConfig: AppConfig
@@ -41,7 +47,7 @@ class SecurityActivity : AppCompatActivity() {
             finish()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
 
         setContentView(R.layout.activity_security)
         applyLocalizedTexts()
@@ -94,7 +100,7 @@ class SecurityActivity : AppCompatActivity() {
             try {
                 val pair = withContext(Dispatchers.IO) {
                     val data = repository.getSettings()
-                    val active = repository.getActiveSessions().sessions.size
+                    val active = repository.getAuthSessions().count { it.active }
                     val audit = repository.getSettingsAudit(limit = 10)
                     Triple(
                         data,
@@ -269,7 +275,7 @@ class SecurityActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
         val newInput = EditText(this).apply {
-            hint = "New Password (>=6)"
+            hint = "New Password (>=8)"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
         val confirmInput = EditText(this).apply {
@@ -291,8 +297,8 @@ class SecurityActivity : AppCompatActivity() {
                     Toast.makeText(this, "请填写完整", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                if (next.length < 6) {
-                    Toast.makeText(this, "新密码至少6位", Toast.LENGTH_SHORT).show()
+                if (next.length < 8) {
+                    Toast.makeText(this, "新密码至少8位", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 if (next != confirm) {
@@ -327,7 +333,14 @@ class SecurityActivity : AppCompatActivity() {
     private fun showActiveSessionsDialog() {
         lifecycleScope.launch {
             try {
-                val rows = withContext(Dispatchers.IO) { repository.getActiveSessions().sessions }
+                val rows = withContext(Dispatchers.IO) {
+                    repository.getAuthSessions()
+                        .filter { it.active }
+                        .sortedWith(
+                            compareByDescending<com.reallive.android.network.AuthSessionDto> { it.current }
+                                .thenByDescending { parseTimeMs(it.last_seen_at ?: it.created_at) },
+                        )
+                }
                 activeSessionCount = rows.size
                 findViewById<TextView>(R.id.security_active_sessions_subtitle).text = "$activeSessionCount devices logged in"
                 if (rows.isEmpty()) {
@@ -338,15 +351,15 @@ class SecurityActivity : AppCompatActivity() {
                         .show()
                     return@launch
                 }
-                val labels = rows.map {
-                    val camera = it.camera_name ?: "Unknown camera"
-                    val status = it.status ?: "active"
-                    "$camera (#${it.camera_id}) · $status"
-                }.toTypedArray()
+                val dialogView = buildSessionDialogContent(rows)
+                val hasOthers = rows.any { !it.current }
                 AlertDialog.Builder(this@SecurityActivity)
                     .setTitle("Active Sessions")
-                    .setItems(labels) { _, which ->
-                        confirmRevokeSession(rows[which].id)
+                    .setView(dialogView)
+                    .setNeutralButton(if (hasOthers) "Logout Other Devices" else "Only Current Device") { _, _ ->
+                        if (hasOthers) {
+                            confirmRevokeOtherSessions()
+                        }
                     }
                     .setNegativeButton("Close", null)
                     .show()
@@ -366,12 +379,41 @@ class SecurityActivity : AppCompatActivity() {
             .setPositiveButton("Revoke") { _, _ ->
                 lifecycleScope.launch {
                     try {
-                        withContext(Dispatchers.IO) { repository.revokeSession(sessionId) }
+                        withContext(Dispatchers.IO) { repository.revokeAuthSession(sessionId) }
                         Toast.makeText(this@SecurityActivity, "Session revoked", Toast.LENGTH_SHORT).show()
                         showActiveSessionsDialog()
                     } catch (ex: Exception) {
                         if (!handleAuthError(ex)) {
                             Toast.makeText(this@SecurityActivity, "撤销会话失败", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun confirmRevokeOtherSessions() {
+        AlertDialog.Builder(this)
+            .setTitle("Logout Other Devices")
+            .setMessage("This will sign out all devices except current one.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Confirm") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        withContext(Dispatchers.IO) { repository.revokeOtherAuthSessions() }
+                        Toast.makeText(
+                            this@SecurityActivity,
+                            "Other devices logged out",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        showActiveSessionsDialog()
+                    } catch (ex: Exception) {
+                        if (!handleAuthError(ex)) {
+                            Toast.makeText(
+                                this@SecurityActivity,
+                                "Failed to logout other devices",
+                                Toast.LENGTH_SHORT,
+                            ).show()
                         }
                     }
                 }
@@ -435,6 +477,136 @@ class SecurityActivity : AppCompatActivity() {
         }
     }
 
+    private fun buildSessionDialogContent(
+        rows: List<com.reallive.android.network.AuthSessionDto>,
+    ): View {
+        val root = ScrollView(this).apply {
+            isFillViewport = true
+        }
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16.dp(), 8.dp(), 16.dp(), 8.dp())
+        }
+        rows.forEach { session ->
+            list.addView(buildSessionCard(session))
+        }
+        root.addView(
+            list,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        return root
+    }
+
+    private fun buildSessionCard(
+        session: com.reallive.android.network.AuthSessionDto,
+    ): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+            background = getDrawable(R.drawable.bg_settings_card)
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            lp.bottomMargin = 10.dp()
+            layoutParams = lp
+        }
+
+        val device = listOf(session.platform, session.device_name, session.app_version)
+            .filter { !it.isNullOrBlank() }
+            .joinToString(" · ")
+            .ifBlank { "Unknown Device" }
+        val platformTag = sessionPlatformTag(session.platform, session.user_agent)
+        val ip = session.ip_address ?: "-"
+        val seen = formatLastSeen(session.last_seen_at ?: session.created_at)
+
+        val title = TextView(this).apply {
+            text = if (session.current) "[$platformTag] $device (Current)" else "[$platformTag] $device"
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(0xFFEAEAF0.toInt())
+        }
+        val subtitle = TextView(this).apply {
+            text = "$ip · $seen"
+            textSize = 12f
+            setTextColor(0xFFAAAAAD.toInt())
+            setPadding(0, 4.dp(), 0, 0)
+        }
+        card.addView(title)
+        card.addView(subtitle)
+
+        if (!session.current) {
+            val revokeBtn = TextView(this).apply {
+                text = "Revoke Session"
+                gravity = Gravity.CENTER
+                textSize = 12f
+                setTextColor(0xFFEAEAF0.toInt())
+                background = getDrawable(R.drawable.bg_btn_outline)
+                setPadding(10.dp(), 8.dp(), 10.dp(), 8.dp())
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+                lp.topMargin = 10.dp()
+                layoutParams = lp
+                setOnClickListener {
+                    confirmRevokeSession(session.id)
+                }
+            }
+            card.addView(revokeBtn)
+        }
+        return card
+    }
+
+    private fun sessionPlatformTag(platform: String?, userAgent: String?): String {
+        val p = (platform ?: "").lowercase(Locale.US)
+        val ua = (userAgent ?: "").lowercase(Locale.US)
+        return when {
+            p.contains("android") -> "Android"
+            p.contains("ios") || p.contains("iphone") || p.contains("ipad") -> "iOS"
+            p.contains("windows") -> "Windows"
+            p.contains("mac") -> "macOS"
+            p.contains("linux") -> "Linux"
+            ua.contains("mobile") -> "Mobile"
+            else -> "Device"
+        }
+    }
+
+    private fun parseTimeMs(raw: String?): Long {
+        if (raw.isNullOrBlank()) return 0L
+        val primary = runCatching {
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX", Locale.US).parse(raw)?.time ?: 0L
+        }.getOrNull()
+        if (primary != null && primary > 0L) return primary
+        val isoNoMs = runCatching {
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX", Locale.US).parse(raw)?.time ?: 0L
+        }.getOrNull()
+        if (isoNoMs != null && isoNoMs > 0L) return isoNoMs
+        return runCatching {
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.parse(raw)?.time ?: 0L
+        }.getOrDefault(0L)
+    }
+
+    private fun formatLastSeen(raw: String?): String {
+        val ms = parseTimeMs(raw)
+        if (ms <= 0L) return "last seen: unknown"
+        val deltaSec = ((System.currentTimeMillis() - ms) / 1000L).coerceAtLeast(0L)
+        return when {
+            deltaSec < 60 -> "last seen: just now"
+            deltaSec < 3600 -> "last seen: ${deltaSec / 60}m ago"
+            deltaSec < 24 * 3600 -> "last seen: ${deltaSec / 3600}h ago"
+            else -> {
+                val text = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(ms))
+                "last seen: $text"
+            }
+        }
+    }
+
     private fun applyLocalizedTexts() {
         val zh = appConfig.getAppLanguage().startsWith("zh", true)
         if (!zh) return
@@ -482,9 +654,16 @@ class SecurityActivity : AppCompatActivity() {
 
     private fun handleAuthError(ex: Exception): Boolean {
         if (ex is HttpException && ex.code() == 401) {
-            appConfig.clearAuth()
-            startActivity(android.content.Intent(this, LoginActivity::class.java))
-            finish()
+            lifecycleScope.launch {
+                val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+                if (valid) {
+                    loadSecurity()
+                } else {
+                    appConfig.clearAuth()
+                    startActivity(android.content.Intent(this@SecurityActivity, LoginActivity::class.java))
+                    finish()
+                }
+            }
             return true
         }
         return false

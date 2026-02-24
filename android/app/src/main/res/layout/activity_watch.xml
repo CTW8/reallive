@@ -137,6 +137,24 @@
             app:layout_constraintTop_toTopOf="@id/watch_player_view"
             app:layout_constraintStart_toStartOf="@id/watch_player_view" />
 
+        <TextView
+            android:id="@+id/watch_add_source_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_btn_tonal"
+            android:paddingStart="10dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="4dp"
+            android:text="Added from QR Scan"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+            android:textColor="#E5DFF9"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/watch_top_bar"
+            app:layout_constraintStart_toStartOf="@id/watch_player_view"
+            app:layout_constraintEnd_toEndOf="@id/watch_player_view" />
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <LinearLayout

@@ -20,11 +20,12 @@ import androidx.lifecycle.lifecycleScope
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.SettingsNotificationsDto
 import com.reallive.android.network.SettingsResponse
 import com.reallive.android.network.SettingsSecurityDto
 import com.reallive.android.network.SettingsSystemDto
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.auth.LoginActivity
 import com.reallive.android.ui.dashboard.DashboardActivity
 import com.reallive.android.ui.notifications.NotificationsActivity
@@ -76,7 +77,7 @@ class SettingsActivity : AppCompatActivity() {
             finish()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
 
         setContentView(R.layout.activity_settings)
         findViewById<TextView>(R.id.settings_about_version).text = "Version ${resolveVersionName()}"
@@ -99,6 +100,9 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<android.view.View>(R.id.settings_open_about).setOnClickListener {
             showAboutDialog()
+        }
+        findViewById<android.view.View>(R.id.settings_reset_tips).setOnClickListener {
+            resetTips()
         }
         findViewById<View>(R.id.settings_row_motion).setOnClickListener { showMotionSensitivityDialog() }
         findViewById<View>(R.id.settings_row_sound).setOnClickListener { showSoundSensitivityDialog() }
@@ -201,7 +205,7 @@ class SettingsActivity : AppCompatActivity() {
                 syncPushStateWithPermission()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    forceRelogin()
+                    if (recoverUnauthorized()) return@launch
                 }
             }
         }
@@ -326,8 +330,7 @@ class SettingsActivity : AppCompatActivity() {
                 currentSettings = previous
                 bindSettings(previous)
                 if (ex is HttpException && ex.code() == 401) {
-                    forceRelogin()
-                    return@launch
+                    if (recoverUnauthorized()) return@launch
                 }
                 Toast.makeText(this@SettingsActivity, "同步设置失败", Toast.LENGTH_SHORT).show()
             } finally {
@@ -504,8 +507,7 @@ class SettingsActivity : AppCompatActivity() {
                 currentSettings = previous
                 bindSettings(previous)
                 if (ex is HttpException && ex.code() == 401) {
-                    forceRelogin()
-                    return@launch
+                    if (recoverUnauthorized()) return@launch
                 }
                 Toast.makeText(this@SettingsActivity, "同步检测配置失败", Toast.LENGTH_SHORT).show()
             } finally {
@@ -550,12 +552,21 @@ class SettingsActivity : AppCompatActivity() {
                 recreate()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    forceRelogin()
-                    return@launch
+                    if (recoverUnauthorized()) return@launch
                 }
                 Toast.makeText(this@SettingsActivity, "更新语言失败", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private suspend fun recoverUnauthorized(): Boolean {
+        val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+        if (valid) {
+            loadSettings()
+            return true
+        }
+        forceRelogin()
+        return true
     }
 
     private fun resolveLanguageOption(raw: String): LanguageOption {
@@ -600,8 +611,21 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.settings_language_value).text = t.languageTitle
         findViewById<TextView>(R.id.settings_security_title).text = t.securityTitle
         findViewById<TextView>(R.id.settings_about_title).text = t.aboutTitle
+        findViewById<TextView>(R.id.settings_reset_tips_title).text = if (zh) "重置提示" else "Reset Tips"
+        findViewById<TextView>(R.id.settings_reset_tips_subtitle).text =
+            if (zh) "再次显示新手引导提示" else "Show onboarding hints again"
         findViewById<TextView>(R.id.settings_sign_out_title).text = t.signOutTitle
         findViewById<TextView>(R.id.settings_nav_settings_title).text = t.pageTitle
+    }
+
+    private fun resetTips() {
+        val zh = appConfig.getAppLanguage().startsWith("zh", true)
+        appConfig.clearAddSourceHintsForCurrentUser()
+        Toast.makeText(
+            this,
+            if (zh) "已重置来源提示" else "Source hints reset",
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     private fun openLocalStorage() {
@@ -653,6 +677,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showAboutDialog() {
         lifecycleScope.launch {
+            val zh = appConfig.getAppLanguage().startsWith("zh", true)
             val msg = try {
                 val health = withContext(Dispatchers.IO) { repository.getHealth() }
                 "Version ${resolveVersionName()}\nServer: ${appConfig.getBaseUrl()}\nStatus: ${health.status}\nUptime: ${health.uptime}s\nNode: ${health.nodeVersion ?: "-"}"
@@ -660,8 +685,16 @@ class SettingsActivity : AppCompatActivity() {
                 "Version ${resolveVersionName()}\nServer: ${appConfig.getBaseUrl()}"
             }
             AlertDialog.Builder(this@SettingsActivity)
-                .setTitle("About RealLive")
+                .setTitle(if (zh) "关于 RealLive" else "About RealLive")
                 .setMessage(msg)
+                .setNeutralButton(if (zh) "重置提示" else "Reset Tips") { _, _ ->
+                    appConfig.clearAddSourceHintsForCurrentUser()
+                    Toast.makeText(
+                        this@SettingsActivity,
+                        if (zh) "已重置来源提示" else "Source hints reset",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
                 .setPositiveButton("OK", null)
                 .show()
         }
@@ -684,7 +717,12 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun forceRelogin(forceReauth: Boolean = false) {
-        if (!forceReauth) appConfig.clearAuth()
+        if (!forceReauth) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                runCatching { repository.logout() }
+            }
+            appConfig.clearAuth()
+        }
         startActivity(
             Intent(this@SettingsActivity, LoginActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)

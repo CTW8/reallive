@@ -19,8 +19,9 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import com.reallive.android.network.CameraDto
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.watch.WatchActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,7 +51,7 @@ class CameraListActivity : AppCompatActivity() {
             finish()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         setContentView(R.layout.activity_camera_list)
         findViewById<TextView>(R.id.camera_list_page_title).text = tr("Camera Management", "摄像头管理")
 
@@ -103,8 +104,13 @@ class CameraListActivity : AppCompatActivity() {
                 updateFilterChipText(filterAll, filterOnline, filterOffline, filterRecording)
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                    finish()
+                    val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+                    if (!valid) {
+                        appConfig.clearAuth()
+                        finish()
+                    } else {
+                        loadCameras()
+                    }
                 }
             }
         }

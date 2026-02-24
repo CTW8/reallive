@@ -21,7 +21,12 @@ data class AuthRegisterRequest(
 
 data class AuthResponse(
     val token: String,
+    val refreshToken: String? = null,
     val user: AuthUserDto,
+)
+
+data class RefreshTokenRequest(
+    val refreshToken: String,
 )
 
 data class ForgotPasswordRequest(
@@ -458,6 +463,25 @@ data class SessionRevokeResponse(
     val ok: Boolean = false,
 )
 
+data class AuthSessionDto(
+    val id: Long,
+    val device_name: String? = null,
+    val platform: String? = null,
+    val app_version: String? = null,
+    val ip_address: String? = null,
+    val user_agent: String? = null,
+    val last_seen_at: String? = null,
+    val expires_at: String? = null,
+    val revoked_at: String? = null,
+    val created_at: String? = null,
+    val current: Boolean = false,
+    val active: Boolean = false,
+)
+
+data class AuthSessionListResponse(
+    val sessions: List<AuthSessionDto> = emptyList(),
+)
+
 data class DeleteCameraResponse(
     val message: String? = null,
 )
@@ -470,6 +494,8 @@ data class SettingsProfileDto(
     val signature: String = "",
     val language: String = "",
     val timezone: String = "",
+    val googleLinked: Boolean = false,
+    val googleEmail: String = "",
 )
 
 data class SettingsNotificationsDto(
@@ -557,6 +583,8 @@ data class UpdateProfileRequest(
     val signature: String = "",
     val language: String = "English",
     val timezone: String = "UTC+08:00",
+    val googleLinked: Boolean? = null,
+    val googleEmail: String? = null,
 )
 
 data class UpdatePreferencesRequest(
@@ -572,6 +600,16 @@ data class ChangePasswordRequest(
 
 data class ChangePasswordResponse(
     val ok: Boolean = false,
+)
+
+data class ShareLinkResponse(
+    val ok: Boolean = false,
+    val mode: String = "view",
+    val cameraId: Long = 0L,
+    val streamKey: String = "",
+    val expiresAt: Long = 0L,
+    val token: String = "",
+    val url: String = "",
 )
 
 data class SettingsAuditResponse(

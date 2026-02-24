@@ -14,7 +14,8 @@ import androidx.lifecycle.lifecycleScope
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.player.Player
 import com.reallive.player.PlayerFactory
 import com.reallive.player.PlayerSurfaceView
@@ -83,7 +84,7 @@ class EventDetailActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.event_detail_back).setOnClickListener { finish() }
 
         appConfig = AppConfig(this)
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         val type = intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "event"
         eventTs = intent.getLongExtra(EXTRA_EVENT_TS, System.currentTimeMillis())
         val score = intent.getDoubleExtra(EXTRA_EVENT_SCORE, 0.0)
@@ -149,17 +150,20 @@ class EventDetailActivity : AppCompatActivity() {
             if (cameraId <= 0L) return@setOnClickListener
             lifecycleScope.launch {
                 try {
-                val playback = withContext(Dispatchers.IO) {
-                    repository.getHistoryPlayback(cameraId, eventTs)
-                }
-                val url = playback.playbackUrl
-                if (!url.isNullOrBlank()) {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(resolveMediaUrl(url))))
-                }
-            } catch (ex: Exception) {
-                if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                        finish()
+                    val playback = withContext(Dispatchers.IO) {
+                        repository.getHistoryPlayback(cameraId, eventTs)
+                    }
+                    val url = playback.playbackUrl
+                    if (!url.isNullOrBlank()) {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(resolveMediaUrl(url))))
+                    }
+                } catch (ex: Exception) {
+                    if (ex is HttpException && ex.code() == 401) {
+                        val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+                        if (!valid) {
+                            appConfig.clearAuth()
+                            finish()
+                        }
                     }
                 }
             }

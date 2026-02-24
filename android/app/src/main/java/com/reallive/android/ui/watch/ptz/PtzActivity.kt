@@ -16,7 +16,8 @@ import androidx.lifecycle.lifecycleScope
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.auth.LoginActivity
 import com.reallive.android.watch.WatchSessionManager
 import com.reallive.player.Player
@@ -71,6 +72,7 @@ class PtzActivity : AppCompatActivity() {
     private var streamHls: String? = null
     private var currentPlayUrl: String? = null
     private var watchSession: WatchSessionManager? = null
+    private var authRecoverInProgress: Boolean = false
     private val repeatHandler = Handler(Looper.getMainLooper())
     private var repeatCommand: String? = null
     private var ptzPollActive: Boolean = false
@@ -92,7 +94,7 @@ class PtzActivity : AppCompatActivity() {
         }
         setContentView(R.layout.activity_ptz)
 
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         cameraId = intent.getLongExtra(EXTRA_CAMERA_ID, -1L)
         cameraName = intent.getStringExtra(EXTRA_CAMERA_NAME).orEmpty()
         videoWrap = findViewById(R.id.ptz_video_wrap)
@@ -293,13 +295,33 @@ class PtzActivity : AppCompatActivity() {
             try {
                 val info = withContext(Dispatchers.IO) { repository.getStreamInfo(cameraId) }
                 ensurePlayback(info)
-                watchSession = WatchSessionManager(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken), cameraId)
+                watchSession = WatchSessionManager(
+                    api = ApiFactory.createAuthorized(appConfig),
+                    cameraId = cameraId,
+                    onUnauthorized = {
+                        runOnUiThread { handleUnauthorizedForPtz() }
+                    },
+                )
                 watchSession?.start()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    appConfig.clearAuth()
-                    redirectToLogin()
+                    handleUnauthorizedForPtz()
                 }
+            }
+        }
+    }
+
+    private fun handleUnauthorizedForPtz() {
+        if (authRecoverInProgress) return
+        authRecoverInProgress = true
+        lifecycleScope.launch {
+            val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+            authRecoverInProgress = false
+            if (valid) {
+                loadStream()
+            } else {
+                appConfig.clearAuth()
+                redirectToLogin()
             }
         }
     }

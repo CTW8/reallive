@@ -13,6 +13,7 @@ import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
 import com.reallive.android.network.*
 import com.reallive.android.network.SettingsResponse
+import com.reallive.android.ui.auth.AuthGuard
 import com.reallive.android.ui.auth.LoginActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -32,7 +33,7 @@ class TwoFactorSetupActivity : AppCompatActivity() {
             finish()
             return
         }
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         setContentView(R.layout.activity_two_factor_setup)
         findViewById<android.view.View>(R.id.two_factor_back).setOnClickListener { finish() }
         findViewById<android.view.View>(R.id.two_factor_enable_btn).setOnClickListener { toggleTwoFactor() }
@@ -54,7 +55,7 @@ class TwoFactorSetupActivity : AppCompatActivity() {
                 renderState(data.security.twoFactor)
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    forceRelogin()
+                    if (recoverUnauthorized()) return@launch
                 } else {
                     Toast.makeText(this@TwoFactorSetupActivity, "加载2FA状态失败", Toast.LENGTH_SHORT).show()
                 }
@@ -104,8 +105,7 @@ class TwoFactorSetupActivity : AppCompatActivity() {
                 ).show()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    forceRelogin()
-                    return@launch
+                    if (recoverUnauthorized()) return@launch
                 }
                 Toast.makeText(this@TwoFactorSetupActivity, "更新2FA失败", Toast.LENGTH_SHORT).show()
             } finally {
@@ -140,11 +140,20 @@ class TwoFactorSetupActivity : AppCompatActivity() {
                     .show()
             } catch (ex: Exception) {
                 if (ex is HttpException && ex.code() == 401) {
-                    forceRelogin()
-                    return@launch
+                    if (recoverUnauthorized()) return@launch
                 }
                 Toast.makeText(this@TwoFactorSetupActivity, "获取安全日志失败", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private suspend fun recoverUnauthorized(): Boolean {
+        val valid = withContext(Dispatchers.IO) { AuthGuard.isSessionValid(appConfig) }
+        if (valid) {
+            loadSettings()
+            return true
+        }
+        forceRelogin()
+        return true
     }
 }

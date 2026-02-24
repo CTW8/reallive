@@ -7,7 +7,7 @@ import androidx.lifecycle.lifecycleScope
 import com.reallive.android.R
 import com.reallive.android.config.AppConfig
 import com.reallive.android.data.CameraRepository
-import com.reallive.android.network.ApiClient
+import com.reallive.android.network.ApiFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,7 +33,7 @@ class ForgotPasswordActivity : AppCompatActivity() {
         statusText = findViewById(R.id.forgot_status)
 
         appConfig = AppConfig(this)
-        repository = CameraRepository(ApiClient.create(appConfig.getBaseUrl(), appConfig::getToken))
+        repository = CameraRepository(ApiFactory.createAuthorized(appConfig))
         applyLocalizedTexts()
 
         findViewById<android.view.View>(R.id.forgot_send_code).setOnClickListener {
@@ -50,9 +50,7 @@ class ForgotPasswordActivity : AppCompatActivity() {
                     val resp = withContext(Dispatchers.IO) { repository.forgotPassword(email) }
                     val fallback = tr("Verification code sent.", "验证码已发送。")
                     val msg = resp.message.ifBlank { fallback }
-                    statusText.text = msg + (resp.temporaryPassword?.let {
-                        if (zh()) " 临时密码：$it" else " Temporary password: $it"
-                    } ?: "")
+                    statusText.text = msg
                     statusText.visibility = android.view.View.VISIBLE
                 } catch (ex: Exception) {
                     statusText.text = parseError(ex, tr("Failed to send verification code.", "发送验证码失败。"))

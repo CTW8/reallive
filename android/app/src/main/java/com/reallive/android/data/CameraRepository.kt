@@ -4,6 +4,7 @@ import com.reallive.android.network.ActiveSessionResponse
 import com.reallive.android.network.AlertBatchRequest
 import com.reallive.android.network.AlertBatchResponse
 import com.reallive.android.network.AlertDto
+import com.reallive.android.network.AuthSessionDto
 import com.reallive.android.network.AuthLoginRequest
 import com.reallive.android.network.AuthRegisterRequest
 import com.reallive.android.network.AuthResponse
@@ -30,6 +31,7 @@ import com.reallive.android.network.SettingsAuditLogDto
 import com.reallive.android.network.SettingsSecurityDto
 import com.reallive.android.network.SettingsSystemDto
 import com.reallive.android.network.SettingsResponse
+import com.reallive.android.network.ShareLinkResponse
 import com.reallive.android.network.StorageDeviceDto
 import com.reallive.android.network.StorageCloudDto
 import com.reallive.android.network.StorageCloudConfigUpdateRequest
@@ -62,10 +64,19 @@ class CameraRepository(private val api: RealLiveApi) {
         return api.forgotPassword(com.reallive.android.network.ForgotPasswordRequest(email = email))
     }
 
+    suspend fun deleteMe(): SessionRevokeResponse = api.deleteMe()
+
+    suspend fun logout(): SessionRevokeResponse = api.logout()
+
     suspend fun listCameras(): List<CameraDto> = api.listCameras()
 
-    suspend fun createCamera(name: String, resolution: String): CameraDto {
-        return api.createCamera(mapOf("name" to name, "resolution" to resolution))
+    suspend fun createCamera(name: String, resolution: String, streamKey: String? = null): CameraDto {
+        val body = linkedMapOf<String, String>(
+            "name" to name,
+            "resolution" to resolution,
+        )
+        if (!streamKey.isNullOrBlank()) body["streamKey"] = streamKey
+        return api.createCamera(body)
     }
 
     suspend fun updateCamera(cameraId: Long, name: String, resolution: String): CameraDto {
@@ -154,6 +165,22 @@ class CameraRepository(private val api: RealLiveApi) {
         )
     }
 
+    suspend fun createShareLink(
+        cameraId: Long,
+        mode: String = "view",
+        ttlSec: Int? = null,
+        oneTime: Boolean = false,
+    ): ShareLinkResponse {
+        val body = mutableMapOf<String, Any>(
+            "mode" to mode,
+            "oneTime" to oneTime,
+        )
+        if (ttlSec != null && ttlSec > 0) {
+            body["ttlSec"] = ttlSec
+        }
+        return api.createShareLink(cameraId, body)
+    }
+
     suspend fun getDashboardStats(): DashboardStatsDto = api.getDashboardStats()
 
     suspend fun getHealth(): HealthDto = api.getHealth()
@@ -165,6 +192,12 @@ class CameraRepository(private val api: RealLiveApi) {
     suspend fun getActiveSessions(): ActiveSessionResponse = api.listActiveSessions()
 
     suspend fun revokeSession(sessionId: Long): SessionRevokeResponse = api.revokeSession(sessionId)
+
+    suspend fun getAuthSessions(): List<AuthSessionDto> = api.listAuthSessions().sessions
+
+    suspend fun revokeAuthSession(sessionId: Long): SessionRevokeResponse = api.revokeAuthSession(sessionId)
+
+    suspend fun revokeOtherAuthSessions(): SessionRevokeResponse = api.revokeOtherAuthSessions()
 
     suspend fun getAlerts(
         limit: Int? = 50,
@@ -210,6 +243,8 @@ class CameraRepository(private val api: RealLiveApi) {
         signature: String,
         language: String,
         timezone: String,
+        googleLinked: Boolean? = null,
+        googleEmail: String? = null,
     ): SettingsResponse {
         return api.updateProfile(
             UpdateProfileRequest(
@@ -219,6 +254,8 @@ class CameraRepository(private val api: RealLiveApi) {
                 signature = signature,
                 language = language,
                 timezone = timezone,
+                googleLinked = googleLinked,
+                googleEmail = googleEmail,
             ),
         )
     }

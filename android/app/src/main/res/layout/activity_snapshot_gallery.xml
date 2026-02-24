@@ -22,7 +22,7 @@
             android:tint="?attr/colorOnBackground" />
 
         <TextView
-            android:id="@+id/snapshot_snackbar_message"
+            android:id="@+id/snapshot_page_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -188,6 +188,7 @@
         android:visibility="gone">
 
         <TextView
+            android:id="@+id/snapshot_snackbar_message"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"

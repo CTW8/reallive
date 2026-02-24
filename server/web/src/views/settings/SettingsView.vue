@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '../../stores/auth.js'
 import { useCameraStore } from '../../stores/camera.js'
-import { dashboardApi, sessionApi, settingsApi } from '../../api/index.js'
+import { authSessionApi, dashboardApi, settingsApi } from '../../api/index.js'
 
 const auth = useAuthStore()
 const cameraStore = useCameraStore()
@@ -232,8 +232,21 @@ async function goUserPage(nextPage) {
 
 async function loadSessions() {
   try {
-    const data = await sessionApi.getActive()
-    activeSessions.value = Array.isArray(data?.sessions) ? data.sessions : []
+    const data = await authSessionApi.list()
+    const rows = Array.isArray(data?.sessions) ? data.sessions : []
+    activeSessions.value = rows
+      .filter((s) => !!s.active)
+      .map((s) => ({
+        id: s.id,
+        device_info: [s.platform, s.device_name, s.app_version].filter(Boolean).join(' · ') || 'Unknown Device',
+        platform: s.platform || '-',
+        ip_address: s.ip_address || '-',
+        user_agent: s.user_agent || '-',
+        icon: sessionIcon(s.platform, s.user_agent),
+        last_seen: formatAuditTime(s.last_seen_at || s.created_at),
+        created_at: formatAuditTime(s.created_at),
+        current: !!s.current,
+      }))
   } catch {
     activeSessions.value = []
   }
@@ -339,17 +352,46 @@ function formatSessionDuration(seconds) {
   return `${sec}s`
 }
 
+function sessionIcon(platform, ua) {
+  const p = String(platform || '').toLowerCase()
+  const agent = String(ua || '').toLowerCase()
+  if (p.includes('android') || p.includes('ios') || agent.includes('mobile')) return 'smartphone'
+  if (p.includes('mac') || p.includes('windows') || p.includes('linux')) return 'laptop_mac'
+  return 'devices'
+}
+
 async function confirmRevokeSession() {
   const sessionId = Number(revokeTarget.value?.id || 0)
   if (!sessionId) return
   saving.value = true
   try {
-    await sessionApi.revoke(sessionId)
+    await authSessionApi.revoke(sessionId)
     await loadSessions()
     pushNotice('Session revoked')
     closeRevokeDrawer()
   } catch (err) {
     pushNotice(err?.message || 'Failed to revoke session')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function revokeOtherSessions() {
+  if (saving.value) return
+  const hasOthers = activeSessions.value.some((s) => !s.current)
+  if (!hasOthers) {
+    pushNotice('No other active device')
+    return
+  }
+  const ok = window.confirm('Sign out all other devices and keep current device online?')
+  if (!ok) return
+  saving.value = true
+  try {
+    await authSessionApi.revokeOthers()
+    await loadSessions()
+    pushNotice('Other devices signed out')
+  } catch (err) {
+    pushNotice(err?.message || 'Failed to sign out other devices')
   } finally {
     saving.value = false
   }
@@ -690,12 +732,17 @@ function userStatusColor(status) {
             <div class="set-actions"><button class="set-btn primary" :disabled="saving" @click="saveSecurityPreferences"><span class="mi">save</span> Save Security</button></div>
 
             <div class="set-card" style="margin-top:16px">
-              <div class="set-card-header"><h3><span class="mi">devices</span> Active Sessions</h3></div>
+              <div class="set-card-header">
+                <h3><span class="mi">devices</span> Active Sessions</h3>
+                <button class="set-btn" :disabled="saving" @click="revokeOtherSessions">
+                  <span class="mi">logout</span>Logout Others
+                </button>
+              </div>
               <div class="set-card-body">
                 <div v-if="!activeSessions.length" class="set-empty">No active session.</div>
                 <div v-for="session in activeSessions" :key="session.id" class="set-row">
-                  <div class="sr-left"><div class="sr-icon"><span class="mi">laptop_mac</span></div><div class="sr-text"><h4>{{ session.device_info || 'Unknown Device' }}</h4><p>{{ session.ip_address || '-' }} · {{ session.user_agent || '-' }}</p></div></div>
-                  <div class="sr-right"><button class="set-btn" :disabled="saving" @click="openRevokeSession(session)"><span class="mi">logout</span> Revoke</button></div>
+                  <div class="sr-left"><div class="sr-icon"><span class="mi">{{ session.icon }}</span></div><div class="sr-text"><h4>{{ session.device_info || 'Unknown Device' }} <span v-if="session.current" class="now-badge">Current</span></h4><p>{{ session.ip_address || '-' }} · {{ session.last_seen || '-' }}</p></div></div>
+                  <div class="sr-right"><button class="set-btn" :disabled="saving || session.current" @click="openRevokeSession(session)"><span class="mi">logout</span> Revoke</button></div>
                 </div>
               </div>
             </div>
@@ -886,12 +933,16 @@ function userStatusColor(status) {
               <div class="ai-value">{{ revokeTarget?.ip_address || '-' }}</div>
             </div>
             <div class="about-item">
-              <div class="ai-label">Duration</div>
-              <div class="ai-value">{{ formatSessionDuration(revokeTarget?.duration_seconds) }}</div>
+              <div class="ai-label">Platform</div>
+              <div class="ai-value">{{ revokeTarget?.platform || '-' }}</div>
             </div>
             <div class="about-item">
-              <div class="ai-label">Started At</div>
-              <div class="ai-value">{{ revokeTarget?.start_time || '-' }}</div>
+              <div class="ai-label">Last Seen</div>
+              <div class="ai-value">{{ revokeTarget?.last_seen || '-' }}</div>
+            </div>
+            <div class="about-item">
+              <div class="ai-label">Created At</div>
+              <div class="ai-value">{{ revokeTarget?.created_at || '-' }}</div>
             </div>
           </div>
           <div class="um-error" style="margin-top:14px">
@@ -1398,6 +1449,17 @@ function userStatusColor(status) {
 .type-tag.config { background: rgba(255,158,67,.12); color: var(--orange); }
 .type-tag.device { background: rgba(125,216,129,.12); color: var(--green); }
 .type-tag.security { background: rgba(255,107,107,.12); color: var(--red); }
+.now-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font: 500 11px/16px 'Roboto', sans-serif;
+  color: #7dd881;
+  border: 1px solid rgba(125,216,129,.45);
+  background: rgba(125,216,129,.12);
+}
 
 .notif-channel {
   display: flex;
