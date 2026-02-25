@@ -1,39 +1,43 @@
 #pragma once
 
-#include "Config.h"
-#include "platform/ICameraCapture.h"
-#include "platform/IAudioCapture.h"
-#include "platform/IEncoder.h"
-#include "platform/IStreamer.h"
-#include "core/LocalRecorder.h"
-#include <atomic>
-#include <thread>
+#include "core/stage/AudioStage.h"
+#include "core/stage/CaptureStage.h"
+#include "core/stage/DetectStage.h"
+#include "core/stage/EncodeStage.h"
+#include "core/stage/OutputStage.h"
+#include "core/stage/ProcessStage.h"
+#include "core/stage/StageGraph.h"
+
 #include <memory>
+#include <atomic>
 #include <mutex>
 #include <string>
+#include <thread>
 
-namespace reallive {
-namespace stage {
-class StagePipeline;
-}
+namespace reallive::stage {
 
-class Pipeline {
+class StagePipeline {
 public:
-    Pipeline();
-    ~Pipeline();
+    StagePipeline() = default;
+    ~StagePipeline();
 
-    bool init(const PusherConfig& config);
+    bool init(
+        const PusherConfig& config,
+        CameraCapturePtr camera,
+        EncoderPtr encoder,
+        StreamerPtr streamer,
+        AudioCapturePtr audio = nullptr
+    );
+
     bool start();
     void stop();
     bool isRunning() const;
-
-    // Stats
-    uint64_t getFramesSent() const;
-    uint64_t getBytesSent() const;
-    double getCurrentFps() const;
-    bool setLivePushEnabled(bool enabled);
-    bool isLivePushEnabled() const;
-    bool isLivePushActive() const;
+    bool setLiveEnabled(bool enabled);
+    bool isLiveEnabled() const;
+    bool isLiveActive() const;
+    uint64_t framesSent() const;
+    uint64_t bytesSent() const;
+    double currentFps() const;
     bool setRecordCleanupPolicy(int minFreePercent, int targetFreePercent);
     bool getRecordCleanupPolicy(int& minFreePercent, int& targetFreePercent) const;
     bool applyRuntimeSettings(
@@ -98,69 +102,56 @@ public:
     ) const;
 
 private:
-    void videoLoop();
-    void audioLoop();
+    bool buildGraph();
+    void startAdaptationLoop();
+    void stopAdaptationLoop();
+    void adaptationLoop();
 
-    bool createComponents(const PusherConfig& config);
+    PusherConfig config_{};
+    StageGraph graph_;
+    std::shared_ptr<CaptureStage> captureStage_;
+    std::shared_ptr<AudioStage> audioStage_;
+    std::shared_ptr<DetectStage> detectStage_;
+    std::shared_ptr<ProcessStage> processStage_;
+    std::shared_ptr<EncodeStage> encodeStage_;
+    std::shared_ptr<OutputStage> outputStage_;
+    bool inited_ = false;
+    bool running_ = false;
+    std::thread adaptationThread_;
+    std::atomic<bool> adaptationRunning_{false};
 
-    CameraCapturePtr camera_;
-    AudioCapturePtr audio_;
-    EncoderPtr encoder_;
-    StreamerPtr streamer_;
-    std::unique_ptr<LocalRecorder> recorder_;
-    std::unique_ptr<stage::StagePipeline> stagePipeline_;
-    bool useStagePipeline_ = false;
-
-    std::thread videoThread_;
-    std::thread audioThread_;
-    std::atomic<bool> running_{false};
-
-    // Stats
-    std::atomic<uint64_t> framesSent_{0};
-    std::atomic<uint64_t> bytesSent_{0};
-    std::atomic<double> currentFps_{0.0};
-    std::atomic<bool> livePushDesired_{true};
-    std::atomic<bool> livePushActive_{false};
-    std::atomic<bool> runtimeMotionEnabled_{true};
-    std::atomic<bool> runtimePersonEnabled_{true};
-    std::atomic<bool> runtimeSoundEnabled_{false};
-    std::atomic<bool> runtimeWatermarkEnabled_{true};
-    mutable std::mutex runtimeSettingsMutex_;
+    mutable std::mutex runtimeMutex_;
+    bool runtimeMotionEnabled_ = true;
+    bool runtimePersonEnabled_ = true;
+    bool runtimeSoundEnabled_ = false;
     std::string runtimeMotionSensitivity_{"High"};
     std::string runtimeSoundSensitivity_{"Loud"};
     std::string runtimeDetectionZones_{"2 zones configured"};
-    std::atomic<int> runtimeImageFlipMode_{0}; // 0 normal, 1 hflip, 2 vflip, 3 rotate180
-    std::atomic<bool> runtimeNightVisionEnabled_{false};
-    std::atomic<int> runtimeNightVisionMode_{0}; // 0 auto, 1 on, 2 off
-    std::atomic<int> runtimeProfileLevel_{2};
-    std::atomic<int> runtimeProfileTargetWidth_{1280};
-    std::atomic<int> runtimeProfileTargetHeight_{720};
-    std::atomic<int> runtimeProfileTargetFps_{20};
-    std::atomic<int> runtimeProfileTargetBitrateKbps_{1200};
-    std::atomic<int64_t> runtimeLastSwitchMs_{0};
-    std::atomic<uint64_t> runtimeAdaptLastSendDrop_{0};
-    std::atomic<int64_t> runtimeAdaptBadSinceMs_{0};
-    std::atomic<int64_t> runtimeAdaptGoodSinceMs_{0};
-    mutable std::mutex streamerMutex_;
-
-    PusherConfig config_;
-    std::string runtimeStreamMode_{"auto"};
+    bool runtimeWatermarkEnabled_ = true;
+    int runtimeImageFlipMode_ = 0;
+    bool runtimeNightVisionEnabled_ = false;
+    int runtimeNightVisionMode_ = 0;
     std::string runtimeStreamProfile_{"auto"};
-    std::string runtimeAutoPolicy_{"balanced"};
+    std::string runtimeStreamMode_{"auto"};
     int runtimeManualLevel_ = 2;
     int runtimeAutoMinLevel_ = 0;
     int runtimeAutoMaxLevel_ = 4;
+    std::string runtimeAutoPolicy_{"balanced"};
     int runtimeAutoCooldownSec_ = 10;
     int runtimeAutoUpHoldSec_ = 25;
     int runtimeAutoDownHoldSec_ = 3;
-    mutable std::mutex runtimeStreamMutex_;
+    int runtimeCurrentLevel_ = 2;
+    int runtimeTargetFps_ = 24;
+    int runtimeTargetBitrateKbps_ = 2000;
+    int64_t runtimeLastSwitchMs_ = 0;
+    int64_t runtimeAdaptBadSinceMs_ = 0;
+    int64_t runtimeAdaptGoodSinceMs_ = 0;
     std::string runtimePtzAction_{"stop"};
-    std::string runtimePtzPreset_{""};
     int runtimePtzSpeed_ = 5;
     int runtimePtzZoomStep_ = 1;
     int runtimePtzZoomLevel_ = 50;
+    std::string runtimePtzPreset_;
     int64_t runtimePtzUpdatedAtMs_ = 0;
-    mutable std::mutex runtimePtzMutex_;
 };
 
-} // namespace reallive
+} // namespace reallive::stage

@@ -1,4 +1,5 @@
 #include "core/Pipeline.h"
+#include "core/stage/StagePipeline.h"
 #include "core/TextOverlay.h"
 
 #include <iostream>
@@ -22,10 +23,14 @@
 #include <condition_variable>
 
 // Platform-specific includes (Raspberry Pi 5)
+#ifdef REALLIVE_HAS_RPI5
 #include "platform/rpi5/LibcameraCapture.h"
 #include "platform/rpi5/AvcodecEncoder.h"
-#include "platform/rpi5/AlsaCapture.h"
 #include "platform/rpi5/RtmpStreamer.h"
+#ifdef REALLIVE_HAS_ALSA
+#include "platform/rpi5/AlsaCapture.h"
+#endif
+#endif
 #include "core/LocalRecorder.h"
 
 #ifdef REALLIVE_HAS_OPENCV
@@ -1534,16 +1539,26 @@ Pipeline::~Pipeline() {
 }
 
 bool Pipeline::createComponents(const PusherConfig& config) {
+#ifdef REALLIVE_HAS_RPI5
     // Create platform-specific implementations for Raspberry Pi 5
     camera_ = std::make_unique<LibcameraCapture>();
     encoder_ = std::make_unique<AvcodecEncoder>();
     streamer_ = std::make_unique<RtmpStreamer>();
 
     if (config.enableAudio) {
+#ifdef REALLIVE_HAS_ALSA
         audio_ = std::make_unique<AlsaCapture>();
+#else
+        std::cerr << "[Pipeline] Audio requested, but ALSA support is not built" << std::endl;
+#endif
     }
 
     return true;
+#else
+    (void)config;
+    std::cerr << "[Pipeline] No platform backend compiled for this target" << std::endl;
+    return false;
+#endif
 }
 
 bool Pipeline::init(const PusherConfig& config) {
@@ -1562,6 +1577,35 @@ bool Pipeline::init(const PusherConfig& config) {
     runtimeProfileTargetHeight_ = bootLevelCfg.height;
     runtimeProfileTargetFps_ = bootLevelCfg.fps;
     runtimeProfileTargetBitrateKbps_ = bootLevelCfg.bitrateKbps;
+
+    const char* stageModeEnv = std::getenv("REALLIVE_STAGE_PIPELINE");
+    const bool wantStagePipeline = stageModeEnv && std::string(stageModeEnv) == "1";
+    if (wantStagePipeline) {
+#ifdef REALLIVE_HAS_RPI5
+        stagePipeline_ = std::make_unique<stage::StagePipeline>();
+        useStagePipeline_ = stagePipeline_->init(
+            config_,
+            std::make_unique<LibcameraCapture>(),
+            std::make_unique<AvcodecEncoder>(),
+            std::make_unique<RtmpStreamer>(),
+#ifdef REALLIVE_HAS_ALSA
+            config_.enableAudio ? std::make_unique<AlsaCapture>() : nullptr
+#else
+            nullptr
+#endif
+        );
+        if (useStagePipeline_) {
+            livePushDesired_ = true;
+            livePushActive_ = false;
+            std::cout << "[Pipeline] StagePipeline mode enabled (experimental)" << std::endl;
+            return true;
+        }
+        std::cerr << "[Pipeline] StagePipeline init failed, fallback to legacy pipeline" << std::endl;
+        stagePipeline_.reset();
+#else
+        std::cout << "[Pipeline] StagePipeline mode unavailable: no RPi5 backend compiled" << std::endl;
+#endif
+    }
 
     if (!createComponents(config)) {
         std::cerr << "[Pipeline] Failed to create components" << std::endl;
@@ -1594,6 +1638,7 @@ bool Pipeline::init(const PusherConfig& config) {
     config_.stream.enableAudio = config.enableAudio && audio_ != nullptr;
 
     // Pass encoder extradata (SPS/PPS) to the streamer for FLV header
+#ifdef REALLIVE_HAS_RPI5
     auto* avEncoder = dynamic_cast<AvcodecEncoder*>(encoder_.get());
     if (avEncoder) {
         config_.stream.videoExtraData = avEncoder->getExtraData();
@@ -1601,6 +1646,7 @@ bool Pipeline::init(const PusherConfig& config) {
         config_.stream.videoWidth = config.encoder.width;
         config_.stream.videoHeight = config.encoder.height;
     }
+#endif
 
     // Connect to streaming server
     if (!streamer_->connect(config_.stream)) {
@@ -1632,6 +1678,21 @@ bool Pipeline::init(const PusherConfig& config) {
 }
 
 bool Pipeline::start() {
+    if (useStagePipeline_ && stagePipeline_) {
+        if (running_) {
+            std::cerr << "[Pipeline] Already running" << std::endl;
+            return false;
+        }
+        if (!stagePipeline_->start()) {
+            std::cerr << "[Pipeline] Failed to start StagePipeline" << std::endl;
+            return false;
+        }
+        running_ = true;
+        livePushActive_ = true;
+        std::cout << "[Pipeline] Started StagePipeline" << std::endl;
+        return true;
+    }
+
     if (running_) {
         std::cerr << "[Pipeline] Already running" << std::endl;
         return false;
@@ -1666,6 +1727,15 @@ bool Pipeline::start() {
 }
 
 void Pipeline::stop() {
+    if (useStagePipeline_ && stagePipeline_) {
+        if (!running_) return;
+        running_ = false;
+        stagePipeline_->stop();
+        livePushActive_ = false;
+        std::cout << "[Pipeline] StagePipeline stopped" << std::endl;
+        return;
+    }
+
     if (!running_) return;
 
     running_ = false;
@@ -1914,6 +1984,7 @@ void Pipeline::videoLoop() {
                   << "@" << targetFps << "fps/" << targetBitrateKbps << "kbps"
                   << std::endl;
 
+#ifdef REALLIVE_HAS_RPI5
         auto nextEncoder = std::make_unique<AvcodecEncoder>();
         EncoderConfig nextEncoderCfg = config_.encoder;
         nextEncoderCfg.width = targetWidth;
@@ -1982,6 +2053,10 @@ void Pipeline::videoLoop() {
         activeEncFps = targetFps;
         activeEncBitrateKbps = targetBitrateKbps;
         return true;
+#else
+        (void)reason;
+        return false;
+#endif
     };
 
     while (running_) {
@@ -2545,22 +2620,45 @@ void Pipeline::audioLoop() {
 }
 
 bool Pipeline::isRunning() const {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->isRunning();
+    }
     return running_;
 }
 
 uint64_t Pipeline::getFramesSent() const {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->framesSent();
+    }
     return framesSent_;
 }
 
 uint64_t Pipeline::getBytesSent() const {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->bytesSent();
+    }
     return bytesSent_;
 }
 
 double Pipeline::getCurrentFps() const {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->currentFps();
+    }
     return currentFps_;
 }
 
 bool Pipeline::setLivePushEnabled(bool enabled) {
+    if (useStagePipeline_) {
+        livePushDesired_ = enabled;
+        if (!stagePipeline_) {
+            livePushActive_ = false;
+            return false;
+        }
+        const bool ok = stagePipeline_->setLiveEnabled(enabled);
+        livePushActive_ = stagePipeline_->isLiveActive();
+        return ok;
+    }
+
     livePushDesired_ = enabled;
     if (!streamer_) return false;
 
@@ -2588,19 +2686,31 @@ bool Pipeline::setLivePushEnabled(bool enabled) {
 }
 
 bool Pipeline::isLivePushEnabled() const {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->isLiveEnabled();
+    }
     return livePushDesired_.load();
 }
 
 bool Pipeline::isLivePushActive() const {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->isLiveActive();
+    }
     return livePushActive_.load();
 }
 
 bool Pipeline::setRecordCleanupPolicy(int minFreePercent, int targetFreePercent) {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->setRecordCleanupPolicy(minFreePercent, targetFreePercent);
+    }
     if (!recorder_ || !recorder_->isEnabled()) return false;
     return recorder_->setCleanupPolicy(minFreePercent, targetFreePercent);
 }
 
 bool Pipeline::getRecordCleanupPolicy(int& minFreePercent, int& targetFreePercent) const {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->getRecordCleanupPolicy(minFreePercent, targetFreePercent);
+    }
     if (!recorder_ || !recorder_->isEnabled()) {
         minFreePercent = config_.record.minFreePercent;
         targetFreePercent = config_.record.targetFreePercent;
@@ -2619,6 +2729,17 @@ bool Pipeline::applyRuntimeSettings(
     const std::string& detectionZones,
     bool watermarkEnabled
 ) {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->applyRuntimeSettings(
+            motionEnabled,
+            personEnabled,
+            soundEnabled,
+            motionSensitivity,
+            soundSensitivity,
+            detectionZones,
+            watermarkEnabled
+        );
+    }
     runtimeMotionEnabled_ = motionEnabled;
     runtimePersonEnabled_ = personEnabled;
     runtimeSoundEnabled_ = soundEnabled;
@@ -2641,6 +2762,18 @@ void Pipeline::getRuntimeSettings(
     std::string& detectionZones,
     bool& watermarkEnabled
 ) const {
+    if (useStagePipeline_ && stagePipeline_) {
+        stagePipeline_->getRuntimeSettings(
+            motionEnabled,
+            personEnabled,
+            soundEnabled,
+            motionSensitivity,
+            soundSensitivity,
+            detectionZones,
+            watermarkEnabled
+        );
+        return;
+    }
     motionEnabled = runtimeMotionEnabled_.load();
     personEnabled = runtimePersonEnabled_.load();
     soundEnabled = runtimeSoundEnabled_.load();
@@ -2654,6 +2787,9 @@ void Pipeline::getRuntimeSettings(
 }
 
 bool Pipeline::applyRuntimeVisualSettings(int imageFlipMode, bool nightVisionEnabled, int nightVisionMode) {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->applyRuntimeVisualSettings(imageFlipMode, nightVisionEnabled, nightVisionMode);
+    }
     const int flip = std::max(0, std::min(3, imageFlipMode));
     const int night = std::max(0, std::min(2, nightVisionMode));
     runtimeImageFlipMode_ = flip;
@@ -2663,6 +2799,10 @@ bool Pipeline::applyRuntimeVisualSettings(int imageFlipMode, bool nightVisionEna
 }
 
 void Pipeline::getRuntimeVisualSettings(int& imageFlipMode, bool& nightVisionEnabled, int& nightVisionMode) const {
+    if (useStagePipeline_ && stagePipeline_) {
+        stagePipeline_->getRuntimeVisualSettings(imageFlipMode, nightVisionEnabled, nightVisionMode);
+        return;
+    }
     imageFlipMode = runtimeImageFlipMode_.load();
     nightVisionEnabled = runtimeNightVisionEnabled_.load();
     nightVisionMode = runtimeNightVisionMode_.load();
@@ -2679,6 +2819,19 @@ bool Pipeline::applyRuntimeStreamPolicy(
     int autoUpHoldSec,
     int autoDownHoldSec
 ) {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->applyRuntimeStreamPolicy(
+            streamProfile,
+            streamMode,
+            manualLevel,
+            autoMinLevel,
+            autoMaxLevel,
+            autoPolicy,
+            autoCooldownSec,
+            autoUpHoldSec,
+            autoDownHoldSec
+        );
+    }
     auto normalizeProfile = [](const std::string& raw) {
         std::string p = raw;
         std::transform(p.begin(), p.end(), p.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -2756,6 +2909,23 @@ void Pipeline::getRuntimeStreamPolicy(
     int& targetFps,
     int& targetBitrateKbps
 ) const {
+    if (useStagePipeline_ && stagePipeline_) {
+        stagePipeline_->getRuntimeStreamPolicy(
+            streamProfile,
+            streamMode,
+            manualLevel,
+            autoMinLevel,
+            autoMaxLevel,
+            autoPolicy,
+            autoCooldownSec,
+            autoUpHoldSec,
+            autoDownHoldSec,
+            currentLevel,
+            targetFps,
+            targetBitrateKbps
+        );
+        return;
+    }
     {
         std::lock_guard<std::mutex> lock(runtimeStreamMutex_);
         streamProfile = runtimeStreamProfile_;
@@ -2780,6 +2950,9 @@ bool Pipeline::applyRuntimePtzCommand(
     int zoomLevel,
     const std::string& preset
 ) {
+    if (useStagePipeline_ && stagePipeline_) {
+        return stagePipeline_->applyRuntimePtzCommand(action, speed, zoomStep, zoomLevel, preset);
+    }
     std::string safeAction = action;
     std::transform(safeAction.begin(), safeAction.end(), safeAction.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -2816,6 +2989,10 @@ void Pipeline::getRuntimePtzState(
     std::string& preset,
     int64_t& updatedAtMs
 ) const {
+    if (useStagePipeline_ && stagePipeline_) {
+        stagePipeline_->getRuntimePtzState(action, speed, zoomStep, zoomLevel, preset, updatedAtMs);
+        return;
+    }
     std::lock_guard<std::mutex> lock(runtimePtzMutex_);
     action = runtimePtzAction_;
     speed = runtimePtzSpeed_;

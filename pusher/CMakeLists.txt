@@ -12,6 +12,7 @@ endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/src)
+find_package(PkgConfig REQUIRED)
 
 option(REALLIVE_ENABLE_OPENCV "Enable OpenCV motion detector for person detection" ON)
 option(REALLIVE_ENABLE_TFLITE "Enable TFLite SSD detector for person detection" ON)
@@ -25,6 +26,14 @@ set(CORE_SOURCES
     src/core/LocalRecorder.cpp
     src/core/ControlServer.cpp
     src/core/MqttRuntimeClient.cpp
+    src/core/stage/StageGraph.cpp
+    src/core/stage/CaptureStage.cpp
+    src/core/stage/AudioStage.cpp
+    src/core/stage/DetectStage.cpp
+    src/core/stage/ProcessStage.cpp
+    src/core/stage/EncodeStage.cpp
+    src/core/stage/OutputStage.cpp
+    src/core/stage/StagePipeline.cpp
 )
 
 # Platform sources
@@ -32,7 +41,6 @@ if(PLATFORM_RPI5)
     set(PLATFORM_SOURCES
         src/platform/rpi5/LibcameraCapture.cpp
         src/platform/rpi5/AvcodecEncoder.cpp
-        src/platform/rpi5/AlsaCapture.cpp
         src/platform/rpi5/RtmpStreamer.cpp
     )
     # Note: V4L2 hardware encoder removed - Pi 5 does not have hardware H.264 encoder
@@ -40,9 +48,62 @@ endif()
 
 add_executable(reallive-pusher ${CORE_SOURCES} ${PLATFORM_SOURCES})
 
+# FFmpeg (required by LocalRecorder, and RTMP/encoder on platform backends)
+pkg_check_modules(AVFORMAT libavformat)
+pkg_check_modules(AVCODEC libavcodec)
+pkg_check_modules(AVUTIL libavutil)
+pkg_check_modules(AVSWRESAMPLE libswresample)
+if(AVFORMAT_FOUND AND AVCODEC_FOUND AND AVUTIL_FOUND)
+    target_include_directories(reallive-pusher PRIVATE
+        ${AVFORMAT_INCLUDE_DIRS}
+        ${AVCODEC_INCLUDE_DIRS}
+        ${AVUTIL_INCLUDE_DIRS}
+    )
+    if(AVSWRESAMPLE_FOUND)
+        target_include_directories(reallive-pusher PRIVATE ${AVSWRESAMPLE_INCLUDE_DIRS})
+    endif()
+    target_link_libraries(reallive-pusher
+        ${AVFORMAT_LIBRARIES}
+        ${AVCODEC_LIBRARIES}
+        ${AVUTIL_LIBRARIES}
+    )
+    if(AVSWRESAMPLE_FOUND)
+        target_link_libraries(reallive-pusher ${AVSWRESAMPLE_LIBRARIES})
+    endif()
+    target_compile_definitions(reallive-pusher PRIVATE REALLIVE_HAS_FFMPEG=1)
+else()
+    message(WARNING "FFmpeg libraries not found; build may fail because LocalRecorder depends on libav*")
+endif()
+
+find_package(ZLIB QUIET)
+if(ZLIB_FOUND)
+    target_link_libraries(reallive-pusher ZLIB::ZLIB)
+endif()
+
+find_package(BZip2 QUIET)
+if(BZIP2_FOUND)
+    target_link_libraries(reallive-pusher BZip2::BZip2)
+endif()
+
+if(APPLE)
+    find_library(ICONV_LIBRARY iconv)
+    if(ICONV_LIBRARY)
+        target_link_libraries(reallive-pusher ${ICONV_LIBRARY})
+    endif()
+
+    target_link_libraries(reallive-pusher
+        "-framework AudioToolbox"
+        "-framework CoreFoundation"
+        "-framework CoreMedia"
+        "-framework CoreVideo"
+        "-framework Security"
+        "-framework VideoToolbox"
+    )
+endif()
+
 # Platform-specific dependencies
 if(PLATFORM_RPI5)
-    find_package(PkgConfig REQUIRED)
+    target_compile_definitions(reallive-pusher PRIVATE REALLIVE_HAS_RPI5=1)
 
     # libcamera
     pkg_check_modules(LIBCAMERA libcamera)
@@ -51,28 +112,15 @@ if(PLATFORM_RPI5)
         target_link_libraries(reallive-pusher ${LIBCAMERA_LIBRARIES})
     endif()
 
-    # FFmpeg (libavformat, libavcodec, libavutil for RTMP streaming)
-    pkg_check_modules(AVFORMAT libavformat)
-    pkg_check_modules(AVCODEC libavcodec)
-    pkg_check_modules(AVUTIL libavutil)
-    if(AVFORMAT_FOUND AND AVCODEC_FOUND AND AVUTIL_FOUND)
-        target_include_directories(reallive-pusher PRIVATE
-            ${AVFORMAT_INCLUDE_DIRS}
-            ${AVCODEC_INCLUDE_DIRS}
-            ${AVUTIL_INCLUDE_DIRS}
-        )
-        target_link_libraries(reallive-pusher
-            ${AVFORMAT_LIBRARIES}
-            ${AVCODEC_LIBRARIES}
-            ${AVUTIL_LIBRARIES}
-        )
-    endif()
-
     # ALSA (libasound for audio capture)
     pkg_check_modules(ALSA alsa)
     if(ALSA_FOUND)
+        target_sources(reallive-pusher PRIVATE src/platform/rpi5/AlsaCapture.cpp)
         target_include_directories(reallive-pusher PRIVATE ${ALSA_INCLUDE_DIRS})
         target_link_libraries(reallive-pusher ${ALSA_LIBRARIES})
+        target_compile_definitions(reallive-pusher PRIVATE REALLIVE_HAS_ALSA=1)
+    else()
+        message(WARNING "ALSA not found, audio capture disabled at build time")
     endif()
 
     if(REALLIVE_ENABLE_OPENCV)

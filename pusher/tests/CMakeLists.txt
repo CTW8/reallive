@@ -35,6 +35,10 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include)
 add_executable(pusher_tests
     test_config.cpp
     test_mock_interfaces.cpp
+    test_stage_graph.cpp
+    test_stage_encode.cpp
+    ../src/core/stage/StageGraph.cpp
+    ../src/core/stage/EncodeStage.cpp
 )
 
 target_link_libraries(pusher_tests
